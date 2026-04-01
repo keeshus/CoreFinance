@@ -1,0 +1,51 @@
+services:
+  nginx:
+    container_name: core-finance-nginx
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+
+  backend:
+    container_name: core-finance-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
+    volumes:
+      - core-finance-backend-data:/app/data
+    depends_on:
+      - db
+    restart: always
+
+  frontend:
+    container_name: core-finance-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      - backend
+    restart: always
+
+  db:
+    container_name: core-finance-db
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=core_finance
+    volumes:
+      - core-finance-db-data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  core-finance-backend-data:
+    name: core-finance-backend-data
+  core-finance-db-data:
+    name: core-finance-db-data

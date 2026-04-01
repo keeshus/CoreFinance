@@ -1,0 +1,30 @@
+{
+  "name": "core-finance",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend": "node backend/index.js",
+    "backend:dev": "nodemon backend/index.js",
+    "frontend:dev": "next dev frontend",
+    "frontend:build": "next build frontend",
+    "frontend:start": "next start frontend -H 0.0.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "next": "^16.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "lucide-react": "^0.577.0",
+    "pg": "^8.13.3",
+    "multer": "^2.1.1",
+    "csv-parse": "^5.6.0",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "recharts": "^3.8.1",
+    "@google-cloud/vertexai": "^1.10.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "type": "module"
+}
