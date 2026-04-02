@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 router.get('/vertex_ai_config', async (req, res) => {
   try {
     const config = await getSettings('vertex_ai_config');
-    res.json(config || { enabled: false, projectId: '', location: 'us-central1', model: 'gemini-3.0-flash' });
+    res.json(config || { enabled: false, projectId: '', location: 'us-central1', model: 'gemini-3-flash-preview', serviceAccountJson: '' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch AI config' });

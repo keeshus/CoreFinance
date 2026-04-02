@@ -36,6 +36,7 @@ export default function AppLayout({ children, activeTab, setActiveTab, totalAsse
             { id: 'overview', icon: <LayoutDashboard size={16} />, label: 'Dashboard' },
             { id: 'upload', icon: <UploadIcon size={16} />, label: 'Import Export' },
             { id: 'rules', icon: <ShieldCheck size={16} />, label: 'Smart Rules' },
+            { id: 'jobs', icon: <Activity size={16} />, label: 'Background Jobs' },
             { id: 'settings', icon: <SettingsIcon size={16} />, label: 'Settings' }
           ].map(tab => (
             <button 

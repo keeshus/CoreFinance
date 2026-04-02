@@ -4,6 +4,7 @@ import DashboardView from '../components/DashboardView';
 import UploadView from '../components/UploadView';
 import SettingsView from '../components/SettingsView';
 import RulesView from '../components/RulesView';
+import JobsView from '../components/JobsView';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -16,6 +17,7 @@ export default function Home() {
   const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rules, setRules] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [aiConfig, setAIConfig] = useState(null);
   const [, setSettings] = useState({ own_accounts: [], account_names: [] });
 
@@ -81,15 +83,33 @@ export default function Home() {
     }
   };
 
+  const fetchJobs = async () => {
+    try {
+      const res = await fetch('/api/jobs');
+      const data = await res.json();
+      setJobs(data);
+    } catch (err) {
+      console.error('Error fetching jobs:', err);
+    }
+  };
+
   const refreshData = async () => {
     setLoading(true);
-    await Promise.all([fetchSummary(), fetchTransactions(), fetchTrend(), fetchSettings(), fetchRules()]);
+    await Promise.all([fetchSummary(), fetchTransactions(), fetchTrend(), fetchSettings(), fetchRules(), fetchJobs()]);
     setLoading(false);
   };
 
   useEffect(() => {
     refreshData();
   }, []);
+
+  useEffect(() => {
+    let interval;
+    if (activeTab === 'jobs') {
+      interval = setInterval(fetchJobs, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -111,14 +131,11 @@ export default function Home() {
 
       const data = await res.json();
       if (res.ok) {
-        if (data.needsInitialBalances) {
-          setUploading(false);
-          return data; // Return to let UploadView handle the state
-        }
         setMessage(data.message);
         setFile(null);
         setBalFile(null);
         refreshData();
+        return data; // Return data so UploadView can handle background jobs
       } else {
         setMessage(`Error: ${data.error}`);
       }
@@ -188,6 +205,7 @@ export default function Home() {
           onFileChange={handleFileChange} 
           onBalFileChange={handleBalFileChange}
           onUpload={handleUpload} 
+          accounts={summary}
         />
       )}
 
@@ -211,6 +229,10 @@ export default function Home() {
             fetchRules();
           }}
         />
+      )}
+
+      {activeTab === 'jobs' && (
+        <JobsView jobs={jobs} onRefresh={fetchJobs} />
       )}
 
       {activeTab === 'settings' && (

@@ -5,6 +5,7 @@ import transactionRoutes from './routes/transactions.js';
 import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/upload.js';
 import rulesRoutes from './routes/rules.js';
+import jobRoutes from './routes/jobs.js';
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,7 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/rules', rulesRoutes);
+app.use('/api/jobs', jobRoutes);
 
 const startServer = async () => {
   try {

@@ -52,6 +52,20 @@ export const initDb = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS background_jobs (
+        id SERIAL PRIMARY KEY,
+        type VARCHAR(50) NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        progress INTEGER DEFAULT 0,
+        logs JSONB DEFAULT '[]',
+        payload JSONB DEFAULT '{}',
+        error TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('Database schema initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
@@ -119,13 +133,13 @@ export const getTransactions = async (filters = {}) => {
 export const getSummary = async () => {
   const result = await pool.query(`
     SELECT 
-      t.account, 
-      COALESCE(an.display_name, t.account) as account_display_name,
+      an.account, 
+      an.display_name as account_display_name,
       an.ai_enabled,
-      SUM(t.amount) as balance 
-    FROM transactions t
-    LEFT JOIN account_names an ON t.account = an.account
-    GROUP BY t.account, an.display_name, an.ai_enabled
+      COALESCE(SUM(t.amount), 0) as balance 
+    FROM account_names an
+    LEFT JOIN transactions t ON t.account = an.account
+    GROUP BY an.account, an.display_name, an.ai_enabled
   `);
   return result.rows;
 };
@@ -227,10 +241,11 @@ export const updateRuleStatus = async (id, is_active, is_proposed) => {
 };
 
 export const insertTransaction = async (client, normalized) => {
-  await client.query(`
+  const result = await client.query(`
     INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (external_id) DO UPDATE SET metadata = $11
+    RETURNING id
   `, [
     normalized.date,
     normalized.time || null,
@@ -244,4 +259,61 @@ export const insertTransaction = async (client, normalized) => {
     normalized.external_id,
     normalized.metadata || {}
   ]);
+  return result.rows[0]?.id;
+};
+
+export const createJob = async (type, payload = {}) => {
+  const result = await pool.query(
+    "INSERT INTO background_jobs (type, payload) VALUES ($1, $2) RETURNING id",
+    [type, JSON.stringify(payload)]
+  );
+  return result.rows[0].id;
+};
+
+export const deleteJob = async (id) => {
+  await pool.query("DELETE FROM background_jobs WHERE id = $1", [id]);
+};
+
+export const updateJob = async (id, { status, progress, log, error, clearError }) => {
+  let query = "UPDATE background_jobs SET updated_at = CURRENT_TIMESTAMP";
+  const params = [id];
+  let paramIdx = 2;
+
+  if (status) {
+    query += `, status = $${paramIdx++}`;
+    params.push(status);
+  }
+  if (progress !== undefined) {
+    query += `, progress = $${paramIdx++}`;
+    params.push(progress);
+  }
+  if (log) {
+    query += `, logs = logs || $${paramIdx++}::jsonb`;
+    params.push(JSON.stringify([{ message: log, timestamp: new Date().toISOString() }]));
+  }
+  if (error) {
+    query += `, error = $${paramIdx++}`;
+    params.push(error);
+  } else if (clearError) {
+    query += `, error = NULL`;
+  }
+
+  query += ` WHERE id = $1`;
+  await pool.query(query, params);
+};
+
+export const getJob = async (id) => {
+  const result = await pool.query("SELECT * FROM background_jobs WHERE id = $1", [id]);
+  return result.rows[0];
+};
+
+export const getTransactionsByIds = async (ids) => {
+  if (!ids || ids.length === 0) return [];
+  const result = await pool.query("SELECT * FROM transactions WHERE id = ANY($1)", [ids]);
+  return result.rows;
+};
+
+export const getJobs = async () => {
+  const result = await pool.query("SELECT * FROM background_jobs ORDER BY created_at DESC");
+  return result.rows;
 };

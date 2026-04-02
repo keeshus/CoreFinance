@@ -6,8 +6,21 @@ export class AIService {
     if (!config || !config.projectId || !config.location) {
       throw new Error('Vertex AI configuration missing (projectId, location)');
     }
-    this.vertexAI = new VertexAI({ project: config.projectId, location: config.location });
-    this.modelName = config.model || 'gemini-3.0-flash';
+
+    const vertexOptions = { project: config.projectId, location: config.location };
+    
+    if (config.serviceAccountJson) {
+      try {
+        vertexOptions.googleAuthOptions = {
+          credentials: JSON.parse(config.serviceAccountJson)
+        };
+      } catch (err) {
+        console.error('Failed to parse serviceAccountJson:', err);
+      }
+    }
+
+    this.vertexAI = new VertexAI(vertexOptions);
+    this.modelName = config.model || 'gemini-3-flash-preview';
     
     this.categories = [
       'Income',

@@ -11,7 +11,8 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
     enabled: false,
     projectId: '',
     location: 'us-central1',
-    model: 'gemini-3.0-flash'
+    model: 'gemini-3-flash-preview',
+    serviceAccountJson: ''
   });
 
   return (
@@ -58,11 +59,23 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
                   onChange={(e) => setVertexConfig({ ...vertexConfig, model: e.target.value })}
                   style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', background: '#fff' }}
                 >
-                  <option value="gemini-3.0-flash">Gemini 3.0 Flash</option>
+                  <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
                   <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                   <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                 </select>
               </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Service Account JSON</label>
+              <textarea 
+                value={vertexConfig.serviceAccountJson}
+                onChange={(e) => setVertexConfig({ ...vertexConfig, serviceAccountJson: e.target.value })}
+                placeholder='{ "type": "service_account", ... }'
+                rows={5}
+                style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontFamily: 'monospace', fontSize: '0.8em' }}
+              />
+              <p style={{ fontSize: '0.75em', color: '#94a3b8', margin: '0' }}>Paste your Google Cloud Service Account JSON key here for authentication.</p>
             </div>
 
             <button 

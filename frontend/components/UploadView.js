@@ -1,20 +1,40 @@
 import React from 'react';
 import { ShieldCheck, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function UploadView({ file, balFile, uploading, message, onFileChange, onBalFileChange, onUpload }) {
+export default function UploadView({ file, balFile, uploading, message, onFileChange, onBalFileChange, onUpload, accounts }) {
   const [verificationResult, setVerificationResult] = React.useState(null);
-  const [step, setStep] = React.useState('select'); // 'select', 'verify', 'initial_balances'
+  const [step, setStep] = React.useState('select'); // 'select', 'verify', 'processing'
+  const [selectedAccount, setSelectedAccount] = React.useState('');
+  const [currentJob, setCurrentJob] = React.useState(null);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount);
   };
 
+  const pollJobStatus = async (jobId) => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`);
+        const data = await res.json();
+        setCurrentJob(data);
+
+        if (data.status === 'completed' || data.status === 'failed') {
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error('Job polling error:', err);
+        clearInterval(interval);
+      }
+    }, 2000);
+  };
+
   const handleVerify = async () => {
-    if (!file || !balFile) return;
+    if (!file || !balFile || !selectedAccount) return;
     
     const formData = new FormData();
     formData.append('transactionFile', file);
     formData.append('balanceFile', balFile);
+    formData.append('accountId', selectedAccount);
 
     try {
       const res = await fetch('/api/upload/verify', {
@@ -31,17 +51,23 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
 
   const handleFinalSubmit = async (e) => {
     if (e) e.preventDefault();
-    if (!file) return;
+    if (!file || !selectedAccount) return;
 
     const formData = new FormData();
     formData.append('transactionFile', file);
+    formData.append('accountId', selectedAccount);
     if (balFile) {
       formData.append('balanceFile', balFile);
     }
 
     try {
-      await onUpload(formData);
-      setStep('select');
+      const result = await onUpload(formData);
+      if (result && result.job_id) {
+        setStep('processing');
+        pollJobStatus(result.job_id);
+      } else {
+        setStep('select');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -61,6 +87,25 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
 
         {step === 'select' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Select Target Account</label>
+              <select 
+                value={selectedAccount}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+                style={{
+                  padding: '12px 16px', borderRadius: '16px', border: '1px solid #e2e8f0',
+                  background: '#f8fafc', fontSize: '0.9em', outline: 'none'
+                }}
+              >
+                <option value="">-- Choose Account --</option>
+                {accounts.map(acc => (
+                  <option key={acc.account} value={acc.account}>
+                    {acc.account_display_name} ({acc.account})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="upload-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                <div style={{ position: 'relative', border: '2px dashed #e2e8f0', borderRadius: '20px', padding: '30px', textAlign: 'center', background: '#f8fafc' }}>
                   <input type="file" onChange={onFileChange} style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }} />
@@ -76,16 +121,72 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
 
             <button 
               onClick={handleVerify}
-              disabled={!file || !balFile || uploading}
+              disabled={!file || !balFile || !selectedAccount || uploading}
               style={{
                 background: '#3b82f6', color: '#fff', border: 'none', padding: '16px', borderRadius: '16px',
-                fontWeight: 'bold', cursor: 'pointer', opacity: (!file || !balFile || uploading) ? 0.5 : 1,
+                fontWeight: 'bold', cursor: 'pointer', opacity: (!file || !balFile || !selectedAccount || uploading) ? 0.5 : 1,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
               }}
             >
               <ShieldCheck size={18} />
               Analyze & Verify
             </button>
+          </div>
+        )}
+
+        {step === 'processing' && currentJob && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                 <span style={{ fontWeight: 800, fontSize: '1.1em' }}>AI Categorization</span>
+                 <span style={{ 
+                   padding: '4px 12px', borderRadius: '12px', fontSize: '0.8em', fontWeight: 'bold',
+                   background: currentJob.status === 'completed' ? '#dcfce7' : currentJob.status === 'failed' ? '#fee2e2' : '#fef9c3',
+                   color: currentJob.status === 'completed' ? '#15803d' : currentJob.status === 'failed' ? '#b91c1c' : '#854d0e'
+                 }}>
+                   {currentJob.status.toUpperCase()}
+                 </span>
+               </div>
+
+               <div style={{ height: '10px', background: '#e2e8f0', borderRadius: '5px', overflow: 'hidden', marginBottom: '10px' }}>
+                 <div style={{ 
+                   height: '100%', background: '#8b5cf6', width: `${currentJob.progress}%`,
+                   transition: 'width 0.5s ease-in-out'
+                 }} />
+               </div>
+               <div style={{ fontSize: '0.85em', color: '#64748b', textAlign: 'right', fontWeight: 'bold' }}>{currentJob.progress}%</div>
+
+               <div style={{ marginTop: '20px' }}>
+                 <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b', marginBottom: '10px' }}>Execution Logs</div>
+                 <div style={{ 
+                   background: '#1e293b', color: '#e2e8f0', padding: '15px', borderRadius: '12px', 
+                   fontFamily: 'monospace', fontSize: '0.8em', maxHeight: '200px', overflowY: 'auto',
+                   display: 'flex', flexDirection: 'column', gap: '5px'
+                 }}>
+                   {currentJob.logs && currentJob.logs.map((log, idx) => (
+                     <div key={idx} style={{ display: 'flex', gap: '10px' }}>
+                       <span style={{ color: '#94a3b8' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                       <span>{log.message}</span>
+                     </div>
+                   ))}
+                   {currentJob.error && (
+                     <div style={{ color: '#f87171', fontWeight: 'bold', marginTop: '10px' }}>ERROR: {currentJob.error}</div>
+                   )}
+                 </div>
+               </div>
+            </div>
+
+            {(currentJob.status === 'completed' || currentJob.status === 'failed') && (
+              <button 
+                onClick={() => setStep('select')}
+                style={{
+                  alignSelf: 'center', padding: '12px 30px', background: '#3b82f6', color: '#fff',
+                  border: 'none', borderRadius: '16px', fontWeight: 'bold', cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            )}
           </div>
         )}
 
