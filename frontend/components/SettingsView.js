@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { 
+  CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw
+} from 'lucide-react';
+import CategoryBadge from './CategoryBadge';
 
 export default function SettingsView({ summary, accountNames = [], onSaveAccountName, aiConfig, onSaveAIConfig, onDeleteAccount }) {
   const [editingAccount, setEditingAccount] = useState(null);
@@ -10,7 +13,8 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
   const [localAIConfig, setLocalAIConfig] = useState({
     enabled: false,
     apiKey: '',
-    model: 'gemini-2.0-flash'
+    model: 'gemini-2.0-flash',
+    unenrichedCount: 0
   });
 
   const [availableModels, setAvailableModels] = useState([]);
@@ -21,7 +25,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
   useEffect(() => {
     if (aiConfig) {
       const { availableModels: cachedModels, ...config } = aiConfig;
-      setLocalAIConfig(config);
+      setLocalAIConfig(prev => ({ ...prev, ...config }));
       if (cachedModels) {
         setAvailableModels(cachedModels);
       }
@@ -152,6 +156,15 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
            Manually trigger AI enrichment for all transactions that have not been processed yet. 
            This will only process transactions from accounts where AI is enabled.
          </p>
+
+         {localAIConfig.unenrichedCount > 0 && (
+           <div style={{ marginBottom: '20px', padding: '12px 20px', background: '#f5f3ff', borderRadius: '12px', border: '1px solid #ddd6fe', display: 'flex', alignItems: 'center', gap: '10px' }}>
+             <Sparkles size={18} color="#7c3aed" />
+             <span style={{ fontSize: '0.95em', color: '#5b21b6', fontWeight: '600' }}>
+               There are {localAIConfig.unenrichedCount} transactions waiting to be enriched.
+             </span>
+           </div>
+         )}
          
          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             <button 
@@ -177,10 +190,27 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                 fontSize: '0.9em'
               }}>
                 {enrichmentResult.error ? enrichmentResult.error : (
-                  <div>
-                    <strong>Success!</strong> {enrichmentResult.message}
-                    {enrichmentResult.count !== undefined && <p style={{ margin: '5px 0 0' }}>Transactions found: {enrichmentResult.count}</p>}
-                    {enrichmentResult.jobId && <p style={{ margin: '5px 0 0' }}>Job ID: {enrichmentResult.jobId}</p>}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.1em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Check size={18} /> Success! {enrichmentResult.message}
+                    </div>
+                    {enrichmentResult.count !== undefined && (
+                      <p style={{ margin: 0, opacity: 0.9 }}>
+                        Found <strong>{enrichmentResult.count}</strong> transactions to process.
+                      </p>
+                    )}
+                    {enrichmentResult.categories && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '5px' }}>
+                        {Object.entries(enrichmentResult.categories).map(([cat, count]) => (
+                          <CategoryBadge key={cat} category={cat} count={count} />
+                        ))}
+                      </div>
+                    )}
+                    {enrichmentResult.jobId && (
+                      <p style={{ margin: '5px 0 0', fontSize: '0.8em', opacity: 0.7 }}>
+                        Job ID: {enrichmentResult.jobId}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

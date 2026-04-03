@@ -19,9 +19,11 @@ router.get('/ai_config', async (req, res) => {
   try {
     const config = await getSettings('ai_config');
     const models = await getAIModels();
+    const unenriched = await getUnenrichedTransactions();
     res.json({
       ...(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash' }),
-      availableModels: models
+      availableModels: models,
+      unenrichedCount: unenriched.length
     });
   } catch (err) {
     console.error(err);
@@ -95,12 +97,25 @@ router.post('/trigger-ai-enrichment', async (req, res) => {
       count: transactions.length 
     });
 
+    const categoryStats = transactions.reduce((acc, t) => {
+      const cats = t.metadata?.ai_categories || ['Uncategorized'];
+      cats.forEach(cat => {
+        acc[cat] = (acc[cat] || 0) + 1;
+      });
+      return acc;
+    }, {});
+
     await aiQueue.add('ai-processing', { 
       transactions: transactions.map(t => ({ id: t.id, account: t.account, name_description: t.name_description, counterparty: t.counterparty, amount: t.amount, currency: t.currency, date: t.date })),
       jobId 
     });
 
-    res.json({ message: 'AI enrichment job started', jobId, count: transactions.length });
+    res.json({ 
+      message: 'AI enrichment job started', 
+      jobId, 
+      count: transactions.length,
+      categories: categoryStats
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to trigger AI enrichment' });

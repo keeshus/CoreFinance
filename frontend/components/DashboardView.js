@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calendar, Search, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, Info, Sparkles, AlertCircle, ShieldCheck } from 'lucide-react';
-import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
+import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend, XAxis as RechartsXAxis, YAxis as RechartsYAxis } from 'recharts';
+import CategoryBadge, { CATEGORY_MAP } from './CategoryBadge';
 
-const COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6'];
+const COLORS = Object.values(CATEGORY_MAP).map(cat => cat.color);
 
 export default function DashboardView({ summary, trend, transactions, fetchTransactions, loading }) {
   const [timespan, setTimespan] = useState('30d');
@@ -446,44 +447,55 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
             <Sparkles size={18} color="#7c3aed" /> Spending by Category
           </h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
-            {categoryData.map((cat, index) => (
-              <button
-                key={cat.name}
-                onClick={() => toggleCategory(cat.name)}
-                style={{
-                  padding: '4px 10px', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer',
-                  background: deselectedCategories.includes(cat.name) ? '#f1f5f9' : COLORS[index % COLORS.length],
-                  color: deselectedCategories.includes(cat.name) ? '#94a3b8' : '#fff',
-                  border: 'none', transition: 'all 0.2s',
-                  textDecoration: deselectedCategories.includes(cat.name) ? 'line-through' : 'none'
-                }}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-          <div style={{ height: '400px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={filteredCategoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
-                  paddingAngle={5}
-                  dataKey="value"
+            {categoryData.map((cat, index) => {
+              const isDeselected = deselectedCategories.includes(cat.name);
+              const info = CATEGORY_MAP[cat.name] || CATEGORY_MAP['Uncategorized'];
+              return (
+                <button
+                  key={cat.name}
+                  onClick={() => toggleCategory(cat.name)}
+                  style={{
+                    padding: '4px 10px', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer',
+                    background: isDeselected ? '#f1f5f9' : info.bg,
+                    color: isDeselected ? '#94a3b8' : info.color,
+                    border: `1px solid ${isDeselected ? '#e2e8f0' : info.color + '33'}`, transition: 'all 0.2s',
+                    textDecoration: isDeselected ? 'line-through' : 'none',
+                    display: 'flex', alignItems: 'center', gap: '5px'
+                  }}
                 >
-                  {filteredCategoryData.map((entry, index) => {
-                    const originalIndex = categoryData.findIndex(c => c.name === entry.name);
-                    return <Cell key={`cell-${index}`} fill={COLORS[originalIndex % COLORS.length]} />;
-                  })}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                  formatter={(val, name, props) => [formatCurrency(val), props.payload.name]}
+                  {!isDeselected && <info.icon size={12} />}
+                  {cat.name}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ height: `${Math.max(300, filteredCategoryData.length * 45)}px` }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={filteredCategoryData}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  width={90}
+                  tick={{ fontSize: 12, fontWeight: 'bold', fill: '#64748b' }}
                 />
-              </PieChart>
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  formatter={(val) => [formatCurrency(val), 'Spending']}
+                />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={25}>
+                  {filteredCategoryData.map((entry, index) => {
+                    const info = CATEGORY_MAP[entry.name] || CATEGORY_MAP['Uncategorized'];
+                    return <Cell key={`cell-${index}`} fill={info.color} />;
+                  })}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -584,13 +596,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                         <div style={{ fontSize: '0.75em', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           {t.account_display_name}
                           {t.metadata?.ai_categories && t.metadata.ai_categories.map((cat, i) => (
-                            <span key={i} style={{ 
-                              display: 'flex', alignItems: 'center', gap: '3px', 
-                              padding: '1px 6px', background: '#f5f3ff', color: '#7c3aed', 
-                              borderRadius: '8px', fontSize: '0.9em', fontWeight: 'bold' 
-                            }}>
-                              <Sparkles size={10} /> {cat}
-                            </span>
+                            <CategoryBadge key={i} category={cat} />
                           ))}
                         </div>
                       </div>
