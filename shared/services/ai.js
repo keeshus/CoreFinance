@@ -9,12 +9,13 @@ export class AIService {
 
     this.genAI = new GoogleGenerativeAI(config.apiKey);
     this.modelName = config.model || 'gemini-2.0-flash';
+    console.log(`[AIService] Initialized with model: ${this.modelName}`);
     
     this.categories = [
       'Income', 'Housing', 'Groceries', 'Dining & Drinks', 'Transportation',
       'Shopping', 'Health & Wellness', 'Insurance', 'Subscriptions',
       'Education', 'Travel & Leisure', 'Gifts & Donations', 'Finance & Taxes',
-      'Savings & Investments', 'Other'
+      'Savings & Investments', 'Payment requests', 'Other'
     ];
   }
 

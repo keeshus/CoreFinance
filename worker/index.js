@@ -105,7 +105,7 @@ const worker = new Worker('ai-processing', async (job) => {
         const { id, ai_categories, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;
         
         await pool.query(
-          "UPDATE transactions SET metadata = metadata || $2::jsonb WHERE id = $1",
+          "UPDATE transactions SET metadata = metadata || $2::jsonb, ai_enriched = true WHERE id = $1",
           [id, JSON.stringify({ ai_categories, is_anomalous, anomaly_reason, rule_violations })]
         );
 

@@ -15,6 +15,8 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
 
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichmentResult, setEnrichmentResult] = useState(null);
 
   useEffect(() => {
     if (aiConfig) {
@@ -46,6 +48,24 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
       console.error('Failed to fetch models:', err);
     } finally {
       setLoadingModels(false);
+    }
+  };
+
+  const triggerEnrichment = async () => {
+    setIsEnriching(true);
+    setEnrichmentResult(null);
+    try {
+      const res = await fetch(`/api/settings/trigger-ai-enrichment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      setEnrichmentResult(data);
+    } catch (err) {
+      console.error('Failed to trigger AI enrichment:', err);
+      setEnrichmentResult({ error: 'Failed to trigger AI enrichment' });
+    } finally {
+      setIsEnriching(false);
     }
   };
 
@@ -120,6 +140,51 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
             >
               <Save size={18} /> Save AI Configuration
             </button>
+         </div>
+      </div>
+
+      {/* Manual AI Enrichment Section */}
+      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <Sparkles size={20} color="#8b5cf6" /> Batch AI Enrichment
+         </h3>
+         <p style={{ color: '#64748b', fontSize: '0.9em', marginBottom: '20px' }}>
+           Manually trigger AI enrichment for all transactions that have not been processed yet. 
+           This will only process transactions from accounts where AI is enabled.
+         </p>
+         
+         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <button 
+              onClick={triggerEnrichment}
+              disabled={isEnriching || !localAIConfig.enabled}
+              style={{ 
+                alignSelf: 'flex-start', padding: '10px 20px', background: isEnriching ? '#cbd5e1' : '#8b5cf6', color: '#fff', 
+                border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: isEnriching || !localAIConfig.enabled ? 'not-allowed' : 'pointer', 
+                display: 'flex', alignItems: 'center', gap: '8px' 
+              }}
+            >
+              <RefreshCw size={18} className={isEnriching ? 'animate-spin' : ''} />
+              {isEnriching ? 'Triggering Job...' : 'Enrich Unprocessed Transactions'}
+            </button>
+
+            {enrichmentResult && (
+              <div style={{ 
+                padding: '15px', 
+                borderRadius: '12px', 
+                background: enrichmentResult.error ? '#fef2f2' : '#f0fdf4',
+                border: `1px solid ${enrichmentResult.error ? '#fecaca' : '#bbf7d0'}`,
+                color: enrichmentResult.error ? '#b91c1c' : '#15803d',
+                fontSize: '0.9em'
+              }}>
+                {enrichmentResult.error ? enrichmentResult.error : (
+                  <div>
+                    <strong>Success!</strong> {enrichmentResult.message}
+                    {enrichmentResult.count !== undefined && <p style={{ margin: '5px 0 0' }}>Transactions found: {enrichmentResult.count}</p>}
+                    {enrichmentResult.jobId && <p style={{ margin: '5px 0 0' }}>Job ID: {enrichmentResult.jobId}</p>}
+                  </div>
+                )}
+              </div>
+            )}
          </div>
       </div>
 

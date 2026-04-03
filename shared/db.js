@@ -30,6 +30,7 @@ export const initDb = async () => {
         type TEXT,
         source TEXT NOT NULL,
         external_id TEXT UNIQUE,
+        ai_enriched BOOLEAN DEFAULT false,
         metadata JSONB DEFAULT '{}'
       );
     `);
@@ -74,6 +75,31 @@ export const initDb = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Check if worker_id column exists
+    const checkColumn = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'background_jobs' AND column_name = 'worker_id'
+    `);
+    
+    if (checkColumn.rows.length === 0) {
+      console.warn('CRITICAL: column "worker_id" is MISSING from table "background_jobs"');
+    } else {
+      console.log('SUCCESS: column "worker_id" exists in table "background_jobs"');
+    }
+
+    // Check and add ai_enriched column to transactions if it doesn't exist
+    const checkAiEnriched = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'transactions' AND column_name = 'ai_enriched'
+    `);
+    
+    if (checkAiEnriched.rows.length === 0) {
+      console.log('Adding "ai_enriched" column to "transactions" table');
+      await client.query('ALTER TABLE transactions ADD COLUMN ai_enriched BOOLEAN DEFAULT false');
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_models (
@@ -370,7 +396,9 @@ export const getTrend = async () => {
       SELECT
         t.date,
         t.account,
-        SUM(t.amount) OVER (PARTITION BY t.account ORDER BY t.date) as balance
+        SUM(t.amount) OVER (PARTITION BY t.account ORDER BY t.date) as balance,
+        t.amount,
+        t.metadata->'ai_categories' as categories
       FROM transactions t
       JOIN account_names an ON t.account = an.account
       ORDER BY t.date ASC
@@ -417,6 +445,21 @@ export const deleteAccount = async (account) => {
     await pool.query('DELETE FROM account_names WHERE account = $1', [account]);
   } catch (err) {
     console.error(`Error deleting account ${account}:`, err);
+    throw err;
+  }
+};
+
+export const getUnenrichedTransactions = async () => {
+  try {
+    const res = await pool.query(`
+      SELECT t.* 
+      FROM transactions t
+      JOIN account_names an ON t.account = an.account
+      WHERE t.ai_enriched = false AND an.ai_enabled = true
+    `);
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching unenriched transactions:', err);
     throw err;
   }
 };

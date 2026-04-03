@@ -1,6 +1,7 @@
 import express from 'express';
-import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount, upsertAIModel, getAIModels } from '../db.js';
+import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount, upsertAIModel, getAIModels, getUnenrichedTransactions, createJob } from '../db.js';
 import { AIService } from '../../shared/services/ai.js';
+import { aiQueue } from '../queue.js';
 
 const router = express.Router();
 
@@ -79,6 +80,30 @@ router.delete('/account/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+router.post('/trigger-ai-enrichment', async (req, res) => {
+  try {
+    const transactions = await getUnenrichedTransactions();
+    if (transactions.length === 0) {
+      return res.json({ message: 'No transactions to enrich' });
+    }
+
+    const jobId = await createJob('ai-processing', { 
+      transactions: transactions.map(t => ({ id: t.id, account: t.account, name_description: t.name_description, counterparty: t.counterparty, amount: t.amount, currency: t.currency, date: t.date })),
+      count: transactions.length 
+    });
+
+    await aiQueue.add('ai-processing', { 
+      transactions: transactions.map(t => ({ id: t.id, account: t.account, name_description: t.name_description, counterparty: t.counterparty, amount: t.amount, currency: t.currency, date: t.date })),
+      jobId 
+    });
+
+    res.json({ message: 'AI enrichment job started', jobId, count: transactions.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to trigger AI enrichment' });
   }
 });
 

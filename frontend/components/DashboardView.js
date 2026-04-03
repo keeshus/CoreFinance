@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calendar, Search, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, Info, Sparkles, AlertCircle } from 'lucide-react';
-import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
+
+const COLORS = ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6'];
 
 export default function DashboardView({ summary, trend, transactions, fetchTransactions, loading }) {
-  const [timespan, setTimespan] = useState('all');
+  const [timespan, setTimespan] = useState('30d');
   const [selectedAccount, setSelectedAccount] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState('date');
@@ -13,10 +15,12 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [deselectedCategories, setDeselectedCategories] = useState(['Uncategorized']);
+  const [timeIndex, setTimeIndex] = useState(null);
 
   const TIMESPAN_OPTIONS = [
     { label: 'Last 7 Days', value: '7d' },
-    { label: 'Last 30 Days', value: '30d' },
+    { label: 'Last Month', value: '30d' },
     { label: 'Last 3 Months', value: '3m' },
     { label: 'Last Year', value: '1y' },
     { label: 'All Time', value: 'all' }
@@ -119,7 +123,97 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
     return result;
   }, [trend, timespan, selectedAccount]);
 
+  const categoryData = useMemo(() => {
+    if (!trend.length) return [];
+
+    const now = new Date();
+    let cutoff = new Date();
+    switch (timespan) {
+      case '7d': cutoff.setDate(now.getDate() - 7); break;
+      case '30d': cutoff.setDate(now.getDate() - 30); break;
+      case '3m': cutoff.setMonth(now.getMonth() - 3); break;
+      case '1y': cutoff.setFullYear(now.getFullYear() - 1); break;
+      case 'all': cutoff = new Date(0); break;
+    }
+
+    const categories = {};
+    trend.forEach(item => {
+      const itemDate = new Date(item.date);
+      if (itemDate < cutoff || itemDate > now) return;
+      if (selectedAccount !== 'all' && item.account !== selectedAccount) return;
+
+      const amount = parseFloat(item.amount);
+      if (amount >= 0) return; // Only focus on spending
+
+      const cats = item.categories || ['Uncategorized'];
+      cats.forEach(cat => {
+        if (!categories[cat]) categories[cat] = 0;
+        categories[cat] += Math.abs(amount);
+      });
+    });
+
+    return Object.entries(categories)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [trend, timespan, selectedAccount]);
+
+  const filteredCategoryData = useMemo(() => {
+    return categoryData.filter(cat => !deselectedCategories.includes(cat.name));
+  }, [categoryData, deselectedCategories]);
+
+  const categoryTrendData = useMemo(() => {
+    if (!trend.length) return [];
+
+    const now = new Date();
+    let cutoff = new Date();
+    switch (timespan) {
+      case '7d': cutoff.setDate(now.getDate() - 7); break;
+      case '30d': cutoff.setDate(now.getDate() - 30); break;
+      case '3m': cutoff.setMonth(now.getMonth() - 3); break;
+      case '1y': cutoff.setFullYear(now.getFullYear() - 1); break;
+      case 'all': cutoff = new Date(0); break;
+    }
+
+    const dailyData = {};
+    const topCategories = categoryData
+      .filter(cat => !deselectedCategories.includes(cat.name))
+      .slice(0, 5)
+      .map(c => c.name);
+
+    trend.forEach(item => {
+      const itemDate = new Date(item.date);
+      if (itemDate < cutoff || itemDate > now) return;
+      if (selectedAccount !== 'all' && item.account !== selectedAccount) return;
+
+      const amount = parseFloat(item.amount);
+      if (amount >= 0) return;
+
+      const dateStr = item.date.substring(0, 10);
+      if (!dailyData[dateStr]) {
+        dailyData[dateStr] = { date: dateStr };
+        topCategories.forEach(cat => dailyData[dateStr][cat] = 0);
+      }
+
+      const cats = item.categories || ['Uncategorized'];
+      cats.forEach(cat => {
+        if (topCategories.includes(cat)) {
+          dailyData[dateStr][cat] += Math.abs(amount);
+        }
+      });
+    });
+
+    return Object.values(dailyData).sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [trend, categoryData, deselectedCategories, timespan, selectedAccount]);
+
   const totalCount = transactions.length > 0 ? parseInt(transactions[0].total_count) : 0;
+
+  const toggleCategory = (name) => {
+    setDeselectedCategories(prev => 
+      prev.includes(name) 
+        ? prev.filter(c => c !== name) 
+        : [...prev, name]
+    );
+  };
   const totalPages = Math.ceil(totalCount / pageSize);
 
   const toggleSort = (field) => {
@@ -328,69 +422,72 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
         ))}
       </div>
 
-      <div className="performance-section" style={{ background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-         <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <TrendingUp size={18} color="#3b82f6" /> 
-              {selectedAccount === 'all' ? 'Total Asset Performance' : `Performance: ${summary.find(a => a.account === selectedAccount)?.account_display_name}`}
-            </h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '4px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <Calendar size={14} color="#64748b" style={{ marginLeft: '8px' }} />
-              <select 
-                value={timespan} 
-                onChange={(e) => setTimespan(e.target.value)}
-                style={{ 
-                  background: 'transparent', border: 'none', fontSize: '0.85em', fontWeight: '600', color: '#475569', 
-                  padding: '6px 12px', outline: 'none', cursor: 'pointer' 
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '4px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <Calendar size={14} color="#64748b" style={{ marginLeft: '8px' }} />
+          <select 
+            value={timespan} 
+            onChange={(e) => setTimespan(e.target.value)}
+            style={{ 
+              background: 'transparent', border: 'none', fontSize: '0.85em', fontWeight: '600', color: '#475569', 
+              padding: '6px 12px', outline: 'none', cursor: 'pointer' 
+            }}
+          >
+            {TIMESPAN_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {categoryData.length > 0 && (
+        <div style={{ background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Sparkles size={18} color="#7c3aed" /> Spending by Category
+          </h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
+            {categoryData.map((cat, index) => (
+              <button
+                key={cat.name}
+                onClick={() => toggleCategory(cat.name)}
+                style={{
+                  padding: '4px 10px', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer',
+                  background: deselectedCategories.includes(cat.name) ? '#f1f5f9' : COLORS[index % COLORS.length],
+                  color: deselectedCategories.includes(cat.name) ? '#94a3b8' : '#fff',
+                  border: 'none', transition: 'all 0.2s',
+                  textDecoration: deselectedCategories.includes(cat.name) ? 'line-through' : 'none'
                 }}
               >
-                {TIMESPAN_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-         </div>
-         <div style={{ height: '250px', width: '100%' }}>
+                {cat.name}
+              </button>
+            ))}
+          </div>
+          <div style={{ height: '400px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={filteredTrend}>
-                <defs>
-                  <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="date" 
-                  hide 
-                />
-                <YAxis 
-                  hide 
-                  domain={['auto', 'auto']}
-                />
+              <PieChart>
+                <Pie
+                  data={filteredCategoryData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={80}
+                  outerRadius={120}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {filteredCategoryData.map((entry, index) => {
+                    const originalIndex = categoryData.findIndex(c => c.name === entry.name);
+                    return <Cell key={`cell-${index}`} fill={COLORS[originalIndex % COLORS.length]} />;
+                  })}
+                </Pie>
                 <Tooltip 
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                  labelFormatter={(label, items) => {
-                    if (items && items.length > 0 && items[0].payload) {
-                      return formatDate(items[0].payload.date);
-                    }
-                    return label;
-                  }}
-                  formatter={(val) => [formatCurrency(val), 'Balance']}
+                  formatter={(val, name, props) => [formatCurrency(val), props.payload.name]}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="amount" 
-                  stroke="#3b82f6" 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorAmount)" 
-                  animationDuration={500}
-                />
-              </AreaChart>
+              </PieChart>
             </ResponsiveContainer>
-         </div>
-      </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
         <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '15px' }}>
