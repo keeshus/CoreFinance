@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw } from 'lucide-react';
 
 export default function SettingsView({ summary, onSaveAccountName, aiConfig, onSaveAIConfig, onDeleteAccount }) {
   const [editingAccount, setEditingAccount] = useState(null);
@@ -7,20 +7,46 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [addAccountData, setAddAccountData] = useState({ id: '', name: '', ai: false });
 
-  const [vertexConfig, setVertexConfig] = useState(aiConfig || {
+  const [localAIConfig, setLocalAIConfig] = useState({
     enabled: false,
-    projectId: '',
-    location: 'us-central1',
-    model: 'gemini-3-flash-preview',
-    serviceAccountJson: ''
+    apiKey: '',
+    model: 'gemini-2.0-flash'
   });
+
+  const [availableModels, setAvailableModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  useEffect(() => {
+    if (aiConfig) {
+      setLocalAIConfig(aiConfig);
+    }
+  }, [aiConfig]);
+
+  const fetchModels = async () => {
+    if (!localAIConfig.apiKey) return;
+    setLoadingModels(true);
+    try {
+      const res = await fetch(`/api/settings/ai_models?apiKey=${localAIConfig.apiKey}`);
+      if (res.ok) {
+        const models = await res.json();
+        setAvailableModels(models);
+        if (models.length > 0 && !models.find(m => m.name === localAIConfig.model)) {
+          // If current model not in list, but we have models, maybe don't auto-switch but show they are available
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch models:', err);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
       {/* AI Config Section */}
       <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
          <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
-           <Sparkles size={20} color="#8b5cf6" /> Vertex AI Global Configuration
+           <Sparkles size={20} color="#8b5cf6" /> Google AI Studio Configuration
          </h3>
          
          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -28,59 +54,60 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
               <input 
                 type="checkbox" 
                 id="ai-enabled"
-                checked={vertexConfig.enabled}
-                onChange={(e) => setVertexConfig({ ...vertexConfig, enabled: e.target.checked })}
+                checked={localAIConfig.enabled}
+                onChange={(e) => setLocalAIConfig({ ...localAIConfig, enabled: e.target.checked })}
               />
               <label htmlFor="ai-enabled" style={{ fontWeight: 'bold', color: '#1e293b' }}>Enable AI Processing (Global Toggle)</label>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Project ID</label>
-                <input 
-                  value={vertexConfig.projectId}
-                  onChange={(e) => setVertexConfig({ ...vertexConfig, projectId: e.target.value })}
-                  placeholder="my-gcp-project-id"
-                  style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
-                />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Location</label>
-                <input 
-                  value={vertexConfig.location}
-                  onChange={(e) => setVertexConfig({ ...vertexConfig, location: e.target.value })}
-                  placeholder="us-central1"
-                  style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
-                />
+                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>AI Studio API Key</label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <input 
+                    type="password"
+                    value={localAIConfig.apiKey}
+                    onChange={(e) => setLocalAIConfig({ ...localAIConfig, apiKey: e.target.value })}
+                    placeholder="Enter your Gemini API Key"
+                    style={{ flex: 1, padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                  />
+                  <button 
+                    onClick={fetchModels}
+                    disabled={!localAIConfig.apiKey || loadingModels}
+                    style={{ 
+                      padding: '10px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '12px', 
+                      cursor: localAIConfig.apiKey ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '5px'
+                    }}
+                  >
+                    <RefreshCw size={16} className={loadingModels ? 'animate-spin' : ''} />
+                    {loadingModels ? '...' : 'Fetch Models'}
+                  </button>
+                </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Model</label>
                 <select 
-                  value={vertexConfig.model}
-                  onChange={(e) => setVertexConfig({ ...vertexConfig, model: e.target.value })}
+                  value={localAIConfig.model}
+                  onChange={(e) => setLocalAIConfig({ ...localAIConfig, model: e.target.value })}
                   style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', background: '#fff' }}
                 >
-                  <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                  {availableModels.length > 0 ? (
+                    availableModels.map(m => (
+                      <option key={m.name} value={m.name}>{m.displayName || m.name}</option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    </>
+                  )}
                 </select>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-              <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Service Account JSON</label>
-              <textarea 
-                value={vertexConfig.serviceAccountJson}
-                onChange={(e) => setVertexConfig({ ...vertexConfig, serviceAccountJson: e.target.value })}
-                placeholder='{ "type": "service_account", ... }'
-                rows={5}
-                style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontFamily: 'monospace', fontSize: '0.8em' }}
-              />
-              <p style={{ fontSize: '0.75em', color: '#94a3b8', margin: '0' }}>Paste your Google Cloud Service Account JSON key here for authentication.</p>
-            </div>
-
             <button 
-              onClick={() => onSaveAIConfig(vertexConfig)}
+              onClick={() => onSaveAIConfig(localAIConfig)}
               style={{ 
                 alignSelf: 'flex-start', padding: '10px 20px', background: '#8b5cf6', color: '#fff', 
                 border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', 
@@ -159,65 +186,65 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
          )}
 
          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-           {summary.map((acc, idx) => (
-             <div key={idx} style={{ 
-               display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-               padding: '15px 20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9'
-             }}>
-               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
-                    {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
-                 </div>
-                 {editingAccount === acc.account ? (
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
-                     <input 
-                       autoFocus
-                       value={newAccountName}
-                       onChange={(e) => setNewAccountName(e.target.value)}
-                       style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f6', outline: 'none' }}
-                     />
-                     <button onClick={() => {
-                        onSaveAccountName(acc.account, newAccountName, acc.ai_enabled);
-                        setEditingAccount(null);
-                     }} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
-                     <button onClick={() => setEditingAccount(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
-                   </div>
-                 ) : (
-                   <span style={{ fontSize: '1.1em', fontWeight: 'bold', color: '#1e293b' }}>{acc.account_display_name}</span>
-                 )}
-               </div>
-               <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  onClick={() => {
-                    onSaveAccountName(acc.account, acc.account_display_name, !acc.ai_enabled);
-                  }}
-                  style={{ 
-                    padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
-                    background: acc.ai_enabled ? '#8b5cf6' : '#fff', color: acc.ai_enabled ? '#fff' : '#64748b',
-                    fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
-                  }}
-                >
-                  {acc.ai_enabled ? 'Disable AI' : 'Enable AI'}
-                </button>
-                <button 
-                    onClick={() => {
-                      setEditingAccount(acc.account);
-                      setNewAccountName(acc.account_display_name);
-                    }}
-                    style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '10px', color: '#64748b', cursor: 'pointer' }}
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button 
-                    onClick={() => onDeleteAccount(acc.account)}
-                    style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-               </div>
-             </div>
-           ))}
+            {summary.map((acc, idx) => (
+              <div key={idx} style={{ 
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                padding: '15px 20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                     <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
+                     {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
+                  </div>
+                  {editingAccount === acc.account ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                      <input 
+                        autoFocus
+                        value={newAccountName}
+                        onChange={(e) => setNewAccountName(e.target.value)}
+                        style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f6', outline: 'none' }}
+                      />
+                      <button onClick={() => {
+                         onSaveAccountName(acc.account, newAccountName, acc.ai_enabled);
+                         setEditingAccount(null);
+                      }} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
+                      <button onClick={() => setEditingAccount(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '1.1em', fontWeight: 'bold', color: '#1e293b' }}>{acc.account_display_name}</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                 <button 
+                   onClick={() => {
+                     onSaveAccountName(acc.account, acc.account_display_name, !acc.ai_enabled);
+                   }}
+                   style={{ 
+                     padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
+                     background: acc.ai_enabled ? '#8b5cf6' : '#fff', color: acc.ai_enabled ? '#fff' : '#64748b',
+                     fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                   }}
+                 >
+                   {acc.ai_enabled ? 'Disable AI' : 'Enable AI'}
+                 </button>
+                 <button 
+                     onClick={() => {
+                       setEditingAccount(acc.account);
+                       setNewAccountName(acc.account_display_name);
+                     }}
+                     style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '10px', color: '#64748b', cursor: 'pointer' }}
+                   >
+                     <Edit2 size={14} />
+                   </button>
+                   <button 
+                     onClick={() => onDeleteAccount(acc.account)}
+                     style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
+                   >
+                     <Trash2 size={14} />
+                   </button>
+                </div>
+              </div>
+            ))}
          </div>
       </div>
     </div>

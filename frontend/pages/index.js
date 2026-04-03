@@ -65,7 +65,7 @@ export default function Home() {
       const data = await res.json();
       setSettings(data);
       
-      const aiRes = await fetch('/api/settings/vertex_ai_config');
+      const aiRes = await fetch('/api/settings/ai_config');
       if (aiRes.ok) {
         setAIConfig(await aiRes.json());
       }
@@ -255,7 +255,7 @@ export default function Home() {
           onSaveAccountName={handleSaveAccountName}
           aiConfig={aiConfig}
           onSaveAIConfig={async (config) => {
-            await fetch('/api/settings/vertex_ai_config', {
+            await fetch('/api/settings/ai_config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(config)

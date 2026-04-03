@@ -58,7 +58,7 @@ const worker = new Worker('ai-processing', async (job) => {
   const { transactions, jobId } = job.data;
   
   try {
-    const config = await getSettings('vertex_ai_config');
+    const config = await getSettings('ai_config');
     if (!config || !config.enabled) {
       await updateJob(jobId, { status: 'completed', progress: 100, log: 'AI processing is disabled.' });
       return;

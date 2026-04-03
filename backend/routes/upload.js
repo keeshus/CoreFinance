@@ -184,7 +184,7 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       
       // Trigger AI analysis in the background via BullMQ
       const jobPayload = { transactionIds: rowIds };
-      const jobId = await createJob('vertex_ai_categorization', jobPayload);
+      const jobId = await createJob('ai_categorization', jobPayload);
       
       await aiQueue.add('analyze', {
         transactions: normalizedRows,

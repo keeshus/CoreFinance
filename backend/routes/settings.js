@@ -1,5 +1,6 @@
 import express from 'express';
 import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount } from '../db.js';
+import { AIService } from '../../shared/services/ai.js';
 
 const router = express.Router();
 
@@ -13,23 +14,37 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/vertex_ai_config', async (req, res) => {
+router.get('/ai_config', async (req, res) => {
   try {
-    const config = await getSettings('vertex_ai_config');
-    res.json(config || { enabled: false, projectId: '', location: 'us-central1', model: 'gemini-3-flash-preview', serviceAccountJson: '' });
+    const config = await getSettings('ai_config');
+    res.json(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch AI config' });
   }
 });
 
-router.post('/vertex_ai_config', async (req, res) => {
+router.post('/ai_config', async (req, res) => {
   try {
-    await updateSettings('vertex_ai_config', req.body);
+    await updateSettings('ai_config', req.body);
     res.json({ message: 'AI configuration updated successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update AI config' });
+  }
+});
+
+router.get('/ai_models', async (req, res) => {
+  try {
+    const apiKey = req.query.apiKey;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API Key is required to fetch models' });
+    }
+    const models = await AIService.listModels(apiKey);
+    res.json(models);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch AI models' });
   }
 });
 

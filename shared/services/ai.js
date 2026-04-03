@@ -1,26 +1,14 @@
-import { VertexAI } from '@google-cloud/vertexai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { pool } from '../db.js';
 
 export class AIService {
   constructor(config) {
-    if (!config || !config.projectId || !config.location) {
-      throw new Error('Vertex AI configuration missing (projectId, location)');
+    if (!config || !config.apiKey) {
+      throw new Error('AI Studio configuration missing (apiKey)');
     }
 
-    const vertexOptions = { project: config.projectId, location: config.location };
-    
-    if (config.serviceAccountJson) {
-      try {
-        vertexOptions.googleAuthOptions = {
-          credentials: JSON.parse(config.serviceAccountJson)
-        };
-      } catch (err) {
-        console.error('Failed to parse serviceAccountJson:', err);
-      }
-    }
-
-    this.vertexAI = new VertexAI(vertexOptions);
-    this.modelName = config.model || 'gemini-3-flash-preview';
+    this.genAI = new GoogleGenerativeAI(config.apiKey);
+    this.modelName = config.model || 'gemini-2.0-flash';
     
     this.categories = [
       'Income', 'Housing', 'Groceries', 'Dining & Drinks', 'Transportation',
@@ -31,9 +19,35 @@ export class AIService {
   }
 
   async getModel() {
-    return this.vertexAI.getGenerativeModel({
+    return this.genAI.getGenerativeModel({
       model: this.modelName,
-      generationConfig: { responseMimeType: 'application/json' },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: SchemaType.ARRAY,
+          items: {
+            type: SchemaType.OBJECT,
+            properties: {
+              id: { type: SchemaType.STRING },
+              ai_categories: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING }
+              },
+              is_anomalous: { type: SchemaType.BOOLEAN },
+              anomaly_reason: { type: SchemaType.STRING },
+              rule_violations: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING }
+              },
+              proposed_rules: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING }
+              }
+            },
+            required: ['id', 'ai_categories', 'is_anomalous']
+          }
+        }
+      },
     });
   }
 
@@ -93,13 +107,35 @@ export class AIService {
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.candidates[0].content.parts[0].text;
+    const text = response.text();
     
     try {
       return JSON.parse(text);
     } catch (err) {
       console.error('Failed to parse AI response:', text);
       throw new Error('AI response was not valid JSON');
+    }
+  }
+
+  static async listModels(apiKey) {
+    // Note: The GoogleGenerativeAI SDK currently doesn't have a direct listModels method
+    // in the same way as the REST API, but we can use fetch for this.
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await response.json();
+      if (data.models) {
+        return data.models
+          .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+          .map(m => ({
+            name: m.name.replace('models/', ''),
+            displayName: m.displayName,
+            description: m.description
+          }));
+      }
+      return [];
+    } catch (err) {
+      console.error('Failed to list models:', err);
+      return [];
     }
   }
 }
