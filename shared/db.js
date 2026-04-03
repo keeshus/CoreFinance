@@ -158,7 +158,7 @@ export const insertTransaction = async (client, data) => {
     const res = await client.query(
       `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, external_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (external_id) DO NOTHING
+       ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
        RETURNING id`,
       [date, time, account, name_description, counterparty, amount, currency, type, source, external_id]
     );
@@ -346,15 +346,16 @@ export const deleteJob = async (id) => {
 export const getSummary = async () => {
   try {
     const res = await pool.query(`
-      SELECT 
-        t.account,
-        COALESCE(an.display_name, t.account) as account_display_name,
-        SUM(t.amount) as balance,
-        t.currency,
-        MAX(t.date) as last_transaction
-      FROM transactions t
-      LEFT JOIN account_names an ON t.account = an.account
-      GROUP BY t.account, an.display_name, t.currency
+      SELECT
+        an.account,
+        an.display_name as account_display_name,
+        COALESCE(SUM(t.amount), 0) as balance,
+        COALESCE(t.currency, 'EUR') as currency,
+        MAX(t.date) as last_transaction,
+        an.ai_enabled
+      FROM account_names an
+      LEFT JOIN transactions t ON an.account = t.account
+      GROUP BY an.account, an.display_name, an.ai_enabled, t.currency
     `);
     return res.rows;
   } catch (err) {
@@ -366,12 +367,13 @@ export const getSummary = async () => {
 export const getTrend = async () => {
   try {
     const res = await pool.query(`
-      SELECT 
-        date,
-        account,
-        SUM(amount) OVER (PARTITION BY account ORDER BY date) as balance
-      FROM transactions
-      ORDER BY date ASC
+      SELECT
+        t.date,
+        t.account,
+        SUM(t.amount) OVER (PARTITION BY t.account ORDER BY t.date) as balance
+      FROM transactions t
+      JOIN account_names an ON t.account = an.account
+      ORDER BY t.date ASC
     `);
     return res.rows;
   } catch (err) {

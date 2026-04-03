@@ -16,10 +16,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - VALKEY_URL=valkey://valkey:6379
-      - INTERNAL_API_KEY=dev-secret-key-123
     volumes:
       - core-finance-backend-data:/app/data
     depends_on:
@@ -39,10 +40,11 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - VALKEY_URL=valkey://valkey:6379
-      - INTERNAL_API_KEY=dev-secret-key-123
     depends_on:
       backend:
         condition: service_healthy
@@ -55,6 +57,8 @@ services:
   valkey:
     container_name: core-finance-valkey
     image: valkey/valkey:alpine
+    ports:
+      - "6379:6379"
     command: valkey-server --save 60 1 --loglevel warning
     volumes:
       - core-finance-valkey-data:/data
@@ -72,10 +76,10 @@ services:
   db:
     container_name: core-finance-db
     image: postgres:18-alpine
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=core_finance
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
     volumes:
       - core-finance-db-data:/var/lib/postgresql/data
     restart: always

@@ -190,74 +190,73 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
          )}
 
          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {/* Merged list of accounts from summary and accountNames */}
-            {[...new Map([
-              ...summary.map(a => [a.account, { account: a.account, display_name: a.account_display_name, ai_enabled: a.ai_enabled, balance: a.balance }]),
-              ...accountNames.map(a => [a.account, { account: a.account, display_name: a.display_name, ai_enabled: a.ai_enabled }])
-            ]).values()].map((acc, idx) => (
-              <div key={idx} style={{ 
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                padding: '15px 20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9'
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
-                      {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
-                      {acc.balance !== undefined && (
+            {/* List of accounts from accountNames (the sole source) */}
+            {accountNames.map((acc, idx) => {
+              const summaryAcc = summary.find(s => s.account === acc.account);
+              const displayBalance = summaryAcc ? summaryAcc.balance : 0;
+              return (
+                <div key={idx} style={{ 
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                  padding: '15px 20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
+                        {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
                         <span style={{ fontSize: '0.65em', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
-                           {new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(acc.balance)}
+                           {new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(displayBalance)}
                         </span>
-                      )}
-                   </div>
-                  {editingAccount === acc.account ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
-                      <input 
-                        autoFocus
-                        value={newAccountName}
-                        onChange={(e) => setNewAccountName(e.target.value)}
-                        style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f6', outline: 'none' }}
-                      />
-                      <button onClick={() => {
-                         onSaveAccountName(acc.account, newAccountName, acc.ai_enabled);
-                         setEditingAccount(null);
-                      }} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
-                      <button onClick={() => setEditingAccount(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: '1.1em', fontWeight: 'bold', color: '#1e293b' }}>{acc.account_display_name}</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                 <button 
-                   onClick={() => {
-                     onSaveAccountName(acc.account, acc.account_display_name, !acc.ai_enabled);
-                   }}
-                   style={{ 
-                     padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
-                     background: acc.ai_enabled ? '#8b5cf6' : '#fff', color: acc.ai_enabled ? '#fff' : '#64748b',
-                     fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
-                   }}
-                 >
-                   {acc.ai_enabled ? 'Disable AI' : 'Enable AI'}
-                 </button>
-                 <button 
+                     </div>
+                    {editingAccount === acc.account ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                        <input 
+                          autoFocus
+                          value={newAccountName}
+                          onChange={(e) => setNewAccountName(e.target.value)}
+                          style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f6', outline: 'none' }}
+                        />
+                        <button onClick={() => {
+                           onSaveAccountName(acc.account, newAccountName, acc.ai_enabled);
+                           setEditingAccount(null);
+                        }} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
+                        <button onClick={() => setEditingAccount(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '1.1em', fontWeight: 'bold', color: '#1e293b' }}>{acc.display_name}</span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                   <button 
                      onClick={() => {
-                       setEditingAccount(acc.account);
-                       setNewAccountName(acc.account_display_name);
+                       onSaveAccountName(acc.account, acc.display_name, !acc.ai_enabled);
                      }}
-                     style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '10px', color: '#64748b', cursor: 'pointer' }}
+                     style={{ 
+                       padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
+                       background: acc.ai_enabled ? '#8b5cf6' : '#fff', color: acc.ai_enabled ? '#fff' : '#64748b',
+                       fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                     }}
                    >
-                     <Edit2 size={14} />
+                     {acc.ai_enabled ? 'Disable AI' : 'Enable AI'}
                    </button>
                    <button 
-                     onClick={() => onDeleteAccount(acc.account)}
-                     style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
-                   >
-                     <Trash2 size={14} />
-                   </button>
+                       onClick={() => {
+                         setEditingAccount(acc.account);
+                         setNewAccountName(acc.display_name);
+                       }}
+                       style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '10px', color: '#64748b', cursor: 'pointer' }}
+                     >
+                       <Edit2 size={14} />
+                     </button>
+                     <button 
+                       onClick={() => onDeleteAccount(acc.account)}
+                       style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
+                     >
+                       <Trash2 size={14} />
+                     </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
          </div>
       </div>
     </div>

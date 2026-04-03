@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"backend,worker,frontend\" -c \"blue,green,magenta\" \"npm run backend:dev\" \"wait-on http://localhost:3000 && npm run worker:dev\" \"wait-on http://localhost:3000 && npm run frontend:dev\"",
     "backend": "node backend/index.js",
-    "backend:dev": "nodemon backend/index.js",
-    "worker": "node worker/index.js",
-    "worker:dev": "nodemon worker/index.js",
+    "backend:dev": "nodemon --env-file=.env backend/index.js",
+    "worker": "node --env-file=.env worker/index.js",
+    "worker:dev": "nodemon --env-file=.env worker/index.js",
     "frontend:dev": "next dev frontend",
     "frontend:build": "next build frontend",
     "frontend:start": "next start frontend -H 0.0.0.0"
@@ -28,7 +29,9 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.14",
+    "wait-on": "^9.0.4"
   },
   "type": "module"
 }

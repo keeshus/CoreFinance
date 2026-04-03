@@ -20,6 +20,8 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
 
         if (data.status === 'completed' || data.status === 'failed') {
           clearInterval(interval);
+          // Refresh summaries after job completion to update account balances
+          if (onUpload) onUpload(null, true);
         }
       } catch (err) {
         console.error('Job polling error:', err);
@@ -29,6 +31,8 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
   };
 
   const handleVerify = async () => {
+    console.log('UploadView: Starting verification for account:', selectedAccount);
+    console.log('UploadView: Available accounts prop:', accounts);
     if (!file || !balFile || !selectedAccount) return;
     
     const formData = new FormData();
@@ -42,10 +46,16 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
         body: formData,
       });
       const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Verification failed');
+      }
+
       setVerificationResult(data);
       setStep('verify');
     } catch (err) {
       console.error(err);
+      alert(err.message);
     }
   };
 
@@ -111,11 +121,13 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
                   <input type="file" onChange={onFileChange} style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }} />
                   <FileText size={32} color={file ? '#3b82f6' : '#94a3b8'} style={{ marginBottom: '10px' }} />
                   <div style={{ fontSize: '0.85em', fontWeight: 'bold', wordBreak: 'break-all' }}>{file ? file.name : 'Transaction CSV'}</div>
+                  {!file && <div style={{ fontSize: '0.7em', color: '#64748b', marginTop: '5px' }}>Mandatory</div>}
                </div>
                <div style={{ position: 'relative', border: '2px dashed #e2e8f0', borderRadius: '20px', padding: '30px', textAlign: 'center', background: '#f8fafc' }}>
                   <input type="file" onChange={onBalFileChange} style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }} />
                   <History size={32} color={balFile ? '#3b82f6' : '#94a3b8'} style={{ marginBottom: '10px' }} />
                   <div style={{ fontSize: '0.85em', fontWeight: 'bold', wordBreak: 'break-all' }}>{balFile ? balFile.name : 'Balance CSV'}</div>
+                  {!balFile && <div style={{ fontSize: '0.7em', color: '#64748b', marginTop: '5px' }}>Mandatory for Verification</div>}
                </div>
             </div>
 
@@ -190,7 +202,7 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
           </div>
         )}
 
-        {step === 'verify' && verificationResult && (
+        {step === 'verify' && verificationResult && verificationResult.discrepancies && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <div style={{ 
               display: 'flex', alignItems: 'center', gap: '12px', padding: '20px', borderRadius: '20px', 

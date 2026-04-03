@@ -223,15 +223,21 @@ export default function Home() {
       )}
       
       {activeTab === 'upload' && (
-        <UploadView 
-          file={file} 
+        <UploadView
+          file={file}
           balFile={balFile}
-          uploading={uploading} 
-          message={message} 
-          onFileChange={handleFileChange} 
+          uploading={uploading}
+          message={message}
+          onFileChange={handleFileChange}
           onBalFileChange={handleBalFileChange}
-          onUpload={handleUpload} 
-          accounts={summary}
+          onUpload={async (formData, refreshOnly) => {
+            if (refreshOnly) {
+               refreshData();
+               return;
+            }
+            return handleUpload(formData);
+          }}
+          accounts={settings.account_names || []}
         />
       )}
 

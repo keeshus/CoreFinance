@@ -25,35 +25,56 @@ const validateAccount = async (client, accountId) => {
 
 router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name: 'balanceFile', maxCount: 1 }]), async (req, res) => {
   const { txContent, balContent } = getUploadFiles(req);
+  const accountId = req.body.accountId;
+
   if (!txContent || !balContent) {
     return res.status(400).json({ error: 'Both transaction and balance files are required' });
   }
+  if (!accountId) {
+    return res.status(400).json({ error: 'Target account ID is required' });
+  }
 
   try {
+    const client = await pool.connect();
+    try {
+      await validateAccount(client, accountId);
+    } finally {
+      client.release();
+    }
+
     const transactions = parseBankCsv(txContent);
     const dailyBalances = parseBalanceCsv(balContent);
 
+    // Filter transactions and balances for the selected account
+    const filteredTxs = transactions.filter(t => t.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''));
+    const filteredBalances = dailyBalances.filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''));
+
+    if (filteredTxs.length === 0) {
+      return res.status(400).json({ error: `No transactions found for account ${accountId} in the uploaded file.` });
+    }
+
     const discrepancies = [];
-    // 1. Get current balances for the accounts in the uploaded file
-    const affectedAccounts = [...new Set(transactions.map(t => t.account))];
+    // 1. Use the selected account
+    const affectedAccounts = [accountId];
     
     // 2. Sort transactions by date to simulate import
-    const sortedTxs = [...transactions].sort((a, b) => a.date - b.date);
+    const sortedTxs = [...filteredTxs].sort((a, b) => a.date - b.date);
     
     // 3. Group transactions by date and account for cross-checking
     const txsByDayAndAccount = sortedTxs.reduce((acc, t) => {
       const dStr = t.date.toISOString().split('T')[0];
       if (!acc[dStr]) acc[dStr] = {};
-      if (!acc[dStr][t.account]) acc[dStr][t.account] = 0;
-      acc[dStr][t.account] += t.amount;
+      const accId = t.account.replace(/\s/g, '');
+      if (!acc[dStr][accId]) acc[dStr][accId] = 0;
+      acc[dStr][accId] += t.amount;
       return acc;
     }, {});
 
     // 4. Group balance overview by day and account
-    const dailyBalanceMap = dailyBalances.reduce((acc, b) => {
+    const dailyBalanceMap = filteredBalances.reduce((acc, b) => {
       const dStr = b.date.toISOString().split('T')[0];
       if (!acc[dStr]) acc[dStr] = {};
-      acc[dStr][b.account] = b.balance;
+      acc[dStr][b.account.replace(/\s/g, '')] = b.balance;
       return acc;
     }, {});
 
@@ -62,19 +83,20 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
     
     for (const day of days) {
       for (const account of affectedAccounts) {
-        const reportedBalance = dailyBalanceMap[day]?.[account];
+        const accId = account.replace(/\s/g, '');
+        const reportedBalance = dailyBalanceMap[day]?.[accId];
         
         if (reportedBalance !== undefined) {
            // To verify the reported balance for 'day', we need the LAST reported balance before 'day'.
-           const prevReportedDay = days.slice(0, days.indexOf(day)).reverse().find(d => dailyBalanceMap[d]?.[account] !== undefined);
+           const prevReportedDay = days.slice(0, days.indexOf(day)).reverse().find(d => dailyBalanceMap[d]?.[accId] !== undefined);
 
            if (prevReportedDay) {
-             const startingBalance = dailyBalanceMap[prevReportedDay][account];
+             const startingBalance = dailyBalanceMap[prevReportedDay][accId];
              
              // Find transactions that happened AFTER prevReportedDay up to and including 'day'
              const periodTxs = sortedTxs.filter(t => {
                const tDateStr = t.date.toISOString().split('T')[0];
-               return t.account === account && tDateStr > prevReportedDay && tDateStr <= day;
+               return t.account.replace(/\s/g, '') === accId && tDateStr > prevReportedDay && tDateStr <= day;
              });
              const periodChange = periodTxs.reduce((sum, t) => sum + t.amount, 0);
              
@@ -99,11 +121,11 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
 
     res.json({ 
       discrepancies,
-      transactionCount: transactions.length,
+      transactionCount: filteredTxs.length,
       summary: affectedAccounts.map(acc => ({
         account: acc,
-        txCount: transactions.filter(t => t.account === acc).length,
-        reportedDays: dailyBalances.filter(b => b.account === acc).length
+        txCount: filteredTxs.filter(t => t.account.replace(/\s/g, '') === acc.replace(/\s/g, '')).length,
+        reportedDays: filteredBalances.filter(b => b.account.replace(/\s/g, '') === acc.replace(/\s/g, '')).length
       }))
     });
 
@@ -115,10 +137,12 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
 
 router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name: 'balanceFile', maxCount: 1 }]), async (req, res) => {
   const { txContent, balContent } = getUploadFiles(req);
+  console.log('Upload Route: Received upload request');
   if (!txContent) {
     return res.status(400).json({ error: 'Transaction file is required' });
   }
   const accountId = req.body.accountId;
+  console.log('Upload Route: Target account ID:', accountId);
   if (!accountId) {
     return res.status(400).json({ error: 'Target account ID is required' });
   }
@@ -183,12 +207,17 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
               external_id: `initial_balance_${accountId}`
             });
             if (id) rowIds.push(id);
+            // Note: The initial balance adjustment isn't in normalizedRows,
+            // so we don't need to add it there for AI processing yet.
           }
       }
 
       for (const row of normalizedRows) {
         const id = await insertTransaction(client, row);
-        if (id) rowIds.push(id);
+        if (id) {
+          rowIds.push(id);
+          row.id = id;
+        }
       }
 
       await client.query('COMMIT');
