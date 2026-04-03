@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw } from 'lucide-react';
 
-export default function SettingsView({ summary, onSaveAccountName, aiConfig, onSaveAIConfig, onDeleteAccount }) {
+export default function SettingsView({ summary, accountNames = [], onSaveAccountName, aiConfig, onSaveAIConfig, onDeleteAccount }) {
   const [editingAccount, setEditingAccount] = useState(null);
   const [newAccountName, setNewAccountName] = useState('');
   const [isAddingAccount, setIsAddingAccount] = useState(false);
@@ -190,16 +190,25 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
          )}
 
          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {summary.map((acc, idx) => (
+            {/* Merged list of accounts from summary and accountNames */}
+            {[...new Map([
+              ...summary.map(a => [a.account, { account: a.account, display_name: a.account_display_name, ai_enabled: a.ai_enabled, balance: a.balance }]),
+              ...accountNames.map(a => [a.account, { account: a.account, display_name: a.display_name, ai_enabled: a.ai_enabled }])
+            ]).values()].map((acc, idx) => (
               <div key={idx} style={{ 
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
                 padding: '15px 20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9'
               }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                     <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
-                     {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
-                  </div>
+                      <span style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#94a3b8', fontFamily: 'monospace' }}>{acc.account}</span>
+                      {acc.ai_enabled && <span style={{ fontSize: '0.65em', background: '#f5f3ff', color: '#7c3aed', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>AI POWERED</span>}
+                      {acc.balance !== undefined && (
+                        <span style={{ fontSize: '0.65em', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold' }}>
+                           {new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(acc.balance)}
+                        </span>
+                      )}
+                   </div>
                   {editingAccount === acc.account ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
                       <input 

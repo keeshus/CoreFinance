@@ -20,7 +20,7 @@ export default function Home() {
   const [jobs, setJobs] = useState([]);
   const [workers, setWorkers] = useState([]);
   const [aiConfig, setAIConfig] = useState(null);
-  const [, setSettings] = useState({ own_accounts: [], account_names: [] });
+  const [settings, setSettings] = useState({ own_accounts: [], account_names: [] });
 
   const fetchSummary = async () => {
     try {
@@ -264,7 +264,8 @@ export default function Home() {
       {activeTab === 'settings' && (
         <SettingsView 
           summary={summary} 
-          onSaveAccountName={handleSaveAccountName}
+          accountNames={settings.account_names}
+          onSaveAccountName={handleSaveAccountName} 
           aiConfig={aiConfig}
           onSaveAIConfig={async (config) => {
             await fetch('/api/settings/ai_config', {

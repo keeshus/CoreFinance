@@ -132,11 +132,16 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     }
 
     // Validation: Ensure all rows match the selected account
-    const invalidRows = normalizedRows.filter(row => row.account && row.account.replace(/\s/g, '') !== accountId.replace(/\s/g, ''));
+    // If a row has an account, it MUST match the selected accountId exactly (ignoring whitespace)
+    const invalidRows = normalizedRows.filter(row => {
+      if (!row.account) return false;
+      return row.account.replace(/\s/g, '') !== accountId.replace(/\s/g, '');
+    });
+
     if (invalidRows.length > 0) {
       const distinctBadAccounts = [...new Set(invalidRows.map(r => r.account))];
       return res.status(400).json({ 
-        error: `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}` 
+        error: `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}. Please ensure the account exists in Settings.` 
       });
     }
 
