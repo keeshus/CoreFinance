@@ -55,7 +55,6 @@ app.post('/api/workers/ping', authenticateWorker, (req, res) => {
   const { workerId, metadata } = req.body;
   if (!workerId) return res.status(400).json({ error: 'workerId required' });
   workerRegistry.ping(workerId, metadata);
-  console.log(`Worker ${workerId} pinged successfully`);
   res.json({ success: true });
 });
 

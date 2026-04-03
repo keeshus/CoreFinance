@@ -240,7 +240,7 @@ export const addRule = async (name, pattern, isProposed = false) => {
   }
 };
 
-export const updateRule = async (id, updates) => {
+const updateRule = async (id, updates) => {
   try {
     const { name, pattern, is_active, is_proposed } = updates;
     const res = await pool.query(
@@ -250,15 +250,6 @@ export const updateRule = async (id, updates) => {
     return res.rows[0];
   } catch (err) {
     console.error(`Error updating rule ${id}:`, err);
-    throw err;
-  }
-};
-
-export const deleteRule = async (id) => {
-  try {
-    await pool.query('DELETE FROM rules WHERE id = $1', [id]);
-  } catch (err) {
-    console.error(`Error deleting rule ${id}:`, err);
     throw err;
   }
 };
@@ -273,7 +264,7 @@ export const getAccountNames = async () => {
   }
 };
 
-export const updateAccountName = async (account, displayName, aiEnabled) => {
+const updateAccountName = async (account, displayName, aiEnabled) => {
   try {
     const res = await pool.query(
       'INSERT INTO account_names (account, display_name, ai_enabled) VALUES ($1, $2, $3) ON CONFLICT (account) DO UPDATE SET display_name = $2, ai_enabled = $3 RETURNING *',
