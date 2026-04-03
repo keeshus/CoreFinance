@@ -6,6 +6,14 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+pool.on('connect', () => {
+  console.log('PostgreSQL connected successfully');
+});
+
+pool.on('error', (err) => {
+  console.error('PostgreSQL unexpected error on idle client:', err);
+});
+
 export const initDb = async () => {
   const client = await pool.connect();
   try {
@@ -61,6 +69,7 @@ export const initDb = async () => {
         logs JSONB DEFAULT '[]',
         payload JSONB DEFAULT '{}',
         error TEXT,
+        worker_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -253,7 +262,7 @@ export const createJob = async (type, payload) => {
 
 export const updateJob = async (id, updates) => {
   try {
-    const { status, progress, log, error, clearError } = updates;
+    const { status, progress, log, error, clearError, workerId } = updates;
     let query = 'UPDATE background_jobs SET updated_at = CURRENT_TIMESTAMP';
     const params = [];
     let idx = 1;
@@ -275,6 +284,10 @@ export const updateJob = async (id, updates) => {
       params.push(error);
     } else if (clearError) {
       query += `, error = NULL`;
+    }
+    if (workerId) {
+      query += `, worker_id = $${idx++}`;
+      params.push(workerId);
     }
 
     query += ` WHERE id = $${idx} RETURNING *`;
@@ -313,6 +326,60 @@ export const deleteJob = async (id) => {
     await pool.query('DELETE FROM background_jobs WHERE id = $1', [id]);
   } catch (err) {
     console.error(`Error deleting job ${id}:`, err);
+    throw err;
+  }
+};
+
+export const getSummary = async () => {
+  try {
+    const res = await pool.query(`
+      SELECT 
+        t.account,
+        COALESCE(an.display_name, t.account) as account_display_name,
+        SUM(t.amount) as balance,
+        t.currency,
+        MAX(t.date) as last_transaction
+      FROM transactions t
+      LEFT JOIN account_names an ON t.account = an.account
+      GROUP BY t.account, an.display_name, t.currency
+    `);
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching summary:', err);
+    throw err;
+  }
+};
+
+export const getTrend = async () => {
+  try {
+    const res = await pool.query(`
+      SELECT 
+        date,
+        account,
+        SUM(amount) OVER (PARTITION BY account ORDER BY date) as balance
+      FROM transactions
+      ORDER BY date ASC
+    `);
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching trend:', err);
+    throw err;
+  }
+};
+
+export const setAccountName = async (account, displayName, aiEnabled) => {
+  return updateAccountName(account, displayName, aiEnabled);
+};
+
+export const updateRuleStatus = async (id, isActive, isProposed) => {
+  return updateRule(id, { is_active: isActive, is_proposed: isProposed });
+};
+
+export const deleteAccount = async (account) => {
+  try {
+    await pool.query('DELETE FROM account_names WHERE account = $1', [account]);
+  } catch (err) {
+    console.error(`Error deleting account ${account}:`, err);
     throw err;
   }
 };

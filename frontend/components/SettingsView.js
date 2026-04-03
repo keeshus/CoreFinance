@@ -22,6 +22,7 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
          <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
            <Sparkles size={20} color="#8b5cf6" /> Vertex AI Global Configuration
          </h3>
+         
          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <input 

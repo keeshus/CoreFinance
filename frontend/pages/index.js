@@ -18,6 +18,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [rules, setRules] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [workers, setWorkers] = useState([]);
   const [aiConfig, setAIConfig] = useState(null);
   const [, setSettings] = useState({ own_accounts: [], account_names: [] });
 
@@ -93,9 +94,19 @@ export default function Home() {
     }
   };
 
+  const fetchWorkers = async () => {
+    try {
+      const res = await fetch('/api/workers');
+      const data = await res.json();
+      setWorkers(data);
+    } catch (err) {
+      console.error('Error fetching workers:', err);
+    }
+  };
+
   const refreshData = async () => {
     setLoading(true);
-    await Promise.all([fetchSummary(), fetchTransactions(), fetchTrend(), fetchSettings(), fetchRules(), fetchJobs()]);
+    await Promise.all([fetchSummary(), fetchTransactions(), fetchTrend(), fetchSettings(), fetchRules(), fetchJobs(), fetchWorkers()]);
     setLoading(false);
   };
 
@@ -106,7 +117,10 @@ export default function Home() {
   useEffect(() => {
     let interval;
     if (activeTab === 'jobs') {
-      interval = setInterval(fetchJobs, 3000);
+      interval = setInterval(() => {
+        fetchJobs();
+        fetchWorkers();
+      }, 3000);
     }
     return () => clearInterval(interval);
   }, [activeTab]);
@@ -232,7 +246,7 @@ export default function Home() {
       )}
 
       {activeTab === 'jobs' && (
-        <JobsView jobs={jobs} onRefresh={fetchJobs} />
+        <JobsView jobs={jobs} workers={workers} onRefresh={() => { fetchJobs(); fetchWorkers(); }} />
       )}
 
       {activeTab === 'settings' && (

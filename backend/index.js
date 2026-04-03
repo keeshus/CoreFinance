@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { initDb, pool } from './db.js';
+import { workerRegistry } from './workerRegistry.js';
 import transactionRoutes from './routes/transactions.js';
 import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/upload.js';
@@ -30,6 +31,33 @@ app.get('/health', (req, res) => {
 });
 
 // Register Routes
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Middleware for internal worker authentication
+const authenticateWorker = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  const internalApiKey = process.env.INTERNAL_API_KEY || 'default-dev-key';
+  
+  if (!apiKey || apiKey !== internalApiKey) {
+    return res.status(401).json({ error: 'Unauthorized worker' });
+  }
+  next();
+};
+
+app.post('/api/workers/ping', authenticateWorker, (req, res) => {
+  const { workerId, metadata } = req.body;
+  if (!workerId) return res.status(400).json({ error: 'workerId required' });
+  workerRegistry.ping(workerId, metadata);
+  console.log(`Worker ${workerId} pinged successfully`);
+  res.json({ success: true });
+});
+
+app.get('/api/workers', (req, res) => {
+  res.json(workerRegistry.getWorkers());
+});
+
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);

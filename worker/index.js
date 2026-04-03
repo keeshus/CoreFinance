@@ -1,11 +1,56 @@
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { pool, getSettings, getRules, addRule, getAccountNames, updateJob } from '../shared/db.js';
-import { AIService } from '../shared/services/ai.js';
 
 const connection = new IORedis(process.env.VALKEY_URL || 'valkey://localhost:6379', {
   maxRetriesPerRequest: null,
 });
+
+connection.on('connect', () => {
+  console.log('Valkey (Redis) connected successfully in Worker');
+});
+
+connection.on('error', (err) => {
+  console.error('Valkey (Redis) connection error in Worker:', err.message);
+});
+import { AIService } from '../shared/services/ai.js';
+import os from 'os';
+
+const workerId = `worker-${os.hostname()}-${process.pid}`;
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'default-dev-key';
+
+const pingBackend = async () => {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/workers/ping`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': INTERNAL_API_KEY
+      },
+      body: JSON.stringify({
+        workerId,
+        metadata: {
+          hostname: os.hostname(),
+          platform: os.platform(),
+          uptime: os.uptime(),
+          memory: os.freemem(),
+        }
+      })
+    });
+    if (res.ok) {
+      console.log(`Successfully connected and pinged backend as ${workerId}`);
+    } else {
+      console.error(`Backend rejected ping with status ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Failed to ping backend:', err.message);
+  }
+};
+
+// Ping every 60 seconds
+setInterval(pingBackend, 60000);
+pingBackend(); // Initial ping
 
 console.log('Worker starting...');
 
@@ -19,7 +64,7 @@ const worker = new Worker('ai-processing', async (job) => {
       return;
     }
 
-    await updateJob(jobId, { status: 'processing', progress: 10, log: 'Initializing AI Service in Worker...' });
+    await updateJob(jobId, { status: 'processing', progress: 10, log: 'Initializing AI Service in Worker...', workerId });
 
     const accountInfo = await getAccountNames();
     const enabledAccounts = accountInfo.filter(a => a.ai_enabled).map(a => a.account);

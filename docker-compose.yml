@@ -19,6 +19,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/core_finance
       - VALKEY_URL=valkey://valkey:6379
+      - INTERNAL_API_KEY=dev-secret-key-123
     volumes:
       - core-finance-backend-data:/app/data
     depends_on:
@@ -41,6 +42,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/core_finance
       - VALKEY_URL=valkey://valkey:6379
+      - INTERNAL_API_KEY=dev-secret-key-123
     depends_on:
       backend:
         condition: service_healthy
