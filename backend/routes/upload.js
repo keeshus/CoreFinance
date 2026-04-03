@@ -1,9 +1,8 @@
 import express from 'express';
 import multer from 'multer';
-import { insertTransaction, pool, getSettings, getRules, addRule, getAccountNames, createJob, updateJob } from '../db.js';
+import { insertTransaction, pool, createJob } from '../db.js';
 import { parseBankCsv, parseBalanceCsv } from '../parser.js';
-import { AIService } from '../services/ai.js';
-import { processAIAsync } from '../services/jobProcessor.js';
+import { aiQueue } from '../queue.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -183,12 +182,16 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
       await client.query('COMMIT');
       
-      // Trigger AI analysis in the background
+      // Trigger AI analysis in the background via BullMQ
       const jobPayload = { transactionIds: rowIds };
       const jobId = await createJob('vertex_ai_categorization', jobPayload);
-      processAIAsync(normalizedRows, jobId).catch(err => console.error('AI background processing error:', err));
+      
+      await aiQueue.add('analyze', {
+        transactions: normalizedRows,
+        jobId: jobId
+      });
 
-      res.json({ 
+      res.json({
         message: `Successfully processed ${normalizedRows.length} records for account ${accountId}`,
         job_id: jobId
       });

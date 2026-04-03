@@ -5,6 +5,8 @@
   "scripts": {
     "backend": "node backend/index.js",
     "backend:dev": "nodemon backend/index.js",
+    "worker": "node worker/index.js",
+    "worker:dev": "nodemon worker/index.js",
     "frontend:dev": "next dev frontend",
     "frontend:build": "next build frontend",
     "frontend:start": "next start frontend -H 0.0.0.0"
@@ -21,7 +23,9 @@
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "recharts": "^3.8.1",
-    "@google-cloud/vertexai": "^1.10.3"
+    "@google-cloud/vertexai": "^1.10.3",
+    "bullmq": "^5.72.1",
+    "ioredis": "^5.10.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

@@ -1,6 +1,6 @@
 import express from 'express';
 import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob } from '../db.js';
-import { processAIAsync } from '../services/jobProcessor.js';
+import { aiQueue } from '../queue.js';
 
 const router = express.Router();
 
@@ -66,8 +66,11 @@ router.post('/:id/retry', async (req, res) => {
       clearError: true 
     });
 
-    // Start background process
-    processAIAsync(transactions, job.id).catch(err => console.error('AI retry error:', err));
+    // Start background process via BullMQ
+    await aiQueue.add('analyze', {
+      transactions: transactions,
+      jobId: job.id
+    });
 
     res.json({ message: 'Job retry started', job_id: job.id });
   } catch (err) {

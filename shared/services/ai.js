@@ -23,21 +23,10 @@ export class AIService {
     this.modelName = config.model || 'gemini-3-flash-preview';
     
     this.categories = [
-      'Income',
-      'Housing',
-      'Groceries',
-      'Dining & Drinks',
-      'Transportation',
-      'Shopping',
-      'Health & Wellness',
-      'Insurance',
-      'Subscriptions',
-      'Education',
-      'Travel & Leisure',
-      'Gifts & Donations',
-      'Finance & Taxes',
-      'Savings & Investments',
-      'Other'
+      'Income', 'Housing', 'Groceries', 'Dining & Drinks', 'Transportation',
+      'Shopping', 'Health & Wellness', 'Insurance', 'Subscriptions',
+      'Education', 'Travel & Leisure', 'Gifts & Donations', 'Finance & Taxes',
+      'Savings & Investments', 'Other'
     ];
   }
 
@@ -48,9 +37,6 @@ export class AIService {
     });
   }
 
-  /**
-   * Aggregates historical transaction data to provide context for AI.
-   */
   async getHistoricalContext() {
     const result = await pool.query(`
       SELECT 
@@ -70,9 +56,6 @@ export class AIService {
     return result.rows;
   }
 
-  /**
-   * Processes a batch of transactions for categorization, anomalies, and rule proposals.
-   */
   async processBatch(transactions, activeRules = []) {
     const historicalContext = await this.getHistoricalContext();
     const model = await this.getModel();
@@ -98,24 +81,25 @@ export class AIService {
       })))}
 
       ### Task:
-      1. **Categorize**: Assign ONE OR MORE relevant categories to each transaction from this list: ${this.categories.join(', ')}.
-      2. **Anomaly Detection**: Flag transactions that seem strange compared to the historical context or typical spending.
-      3. **Rule Checking**: Evaluate if any active rules are violated (e.g., if a transaction looks like car insurance but the counterparty is not the one specified in the rule).
-      4. **Smart Rule Proposals**: Suggest new rules based on recurring patterns in this batch that weren't in the historical context.
+      For each transaction, provide:
+      1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
+      2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
+      3. 'anomaly_reason': String (optional), explanation of the anomaly.
+      4. 'rule_violations': Array of IDs of any active rules that were violated.
+      5. 'proposed_rules': Array of strings representing NEW suggested rules (regex-like patterns) based on this transaction's patterns.
 
-      ### Return Format (JSON Array of objects):
-      [{
-        "id": number,
-        "ai_categories": string[],
-        "is_anomalous": boolean,
-        "anomaly_reason": string | null,
-        "rule_violations": string[],
-        "proposed_rules": string[]
-      }]
+      Return ONLY a JSON array of objects.
     `;
 
-    const response = await model.generateContent(prompt);
-    const text = response.response.candidates[0].content.parts[0].text;
-    return JSON.parse(text);
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.candidates[0].content.parts[0].text;
+    
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      console.error('Failed to parse AI response:', text);
+      throw new Error('AI response was not valid JSON');
+    }
   }
 }

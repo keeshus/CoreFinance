@@ -18,10 +18,44 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/core_finance
+      - VALKEY_URL=valkey://valkey:6379
     volumes:
       - core-finance-backend-data:/app/data
     depends_on:
-      - db
+      db:
+        condition: service_started
+      valkey:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  worker:
+    container_name: core-finance-worker
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
+      - VALKEY_URL=valkey://valkey:6379
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_started
+      valkey:
+        condition: service_started
+    restart: always
+
+  valkey:
+    container_name: core-finance-valkey
+    image: valkey/valkey:alpine
+    command: valkey-server --save 60 1 --loglevel warning
+    volumes:
+      - core-finance-valkey-data:/data
     restart: always
 
   frontend:
@@ -49,3 +83,5 @@ volumes:
     name: core-finance-backend-data
   core-finance-db-data:
     name: core-finance-db-data
+  core-finance-valkey-data:
+    name: core-finance-valkey-data

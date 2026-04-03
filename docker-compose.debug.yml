@@ -12,6 +12,17 @@ services:
       - core-finance-db-data-debug:/var/lib/postgresql/data
     restart: always
 
+  valkey:
+    container_name: core-finance-valkey-debug
+    image: valkey/valkey:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - core-finance-valkey-data-debug:/data
+    restart: always
+
 volumes:
   core-finance-db-data-debug:
     name: core-finance-db-data-debug
+  core-finance-valkey-data-debug:
+    name: core-finance-valkey-data-debug
