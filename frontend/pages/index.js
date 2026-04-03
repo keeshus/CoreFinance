@@ -105,9 +105,21 @@ export default function Home() {
   };
 
   const refreshData = async () => {
+    if (loading) return;
     setLoading(true);
-    await Promise.all([fetchSummary(), fetchTransactions(), fetchTrend(), fetchSettings(), fetchRules(), fetchJobs(), fetchWorkers()]);
-    setLoading(false);
+    try {
+      await Promise.all([
+        fetchSummary(), 
+        fetchTransactions(), 
+        fetchTrend(), 
+        fetchSettings(), 
+        fetchRules(), 
+        fetchJobs(), 
+        fetchWorkers()
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {

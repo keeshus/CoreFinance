@@ -38,7 +38,12 @@ app.get('/api/health', (req, res) => {
 // Middleware for internal worker authentication
 const authenticateWorker = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  const internalApiKey = process.env.INTERNAL_API_KEY || 'default-dev-key';
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  
+  if (!internalApiKey) {
+    console.error('INTERNAL_API_KEY is not set. Worker authentication will fail.');
+    return res.status(500).json({ error: 'Internal server configuration error' });
+  }
   
   if (!apiKey || apiKey !== internalApiKey) {
     return res.status(401).json({ error: 'Unauthorized worker' });

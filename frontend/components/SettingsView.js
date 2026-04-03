@@ -26,7 +26,11 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
     if (!localAIConfig.apiKey) return;
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/settings/ai_models?apiKey=${localAIConfig.apiKey}`);
+      const res = await fetch(`/api/settings/ai_models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: localAIConfig.apiKey })
+      });
       if (res.ok) {
         const models = await res.json();
         setAvailableModels(models);

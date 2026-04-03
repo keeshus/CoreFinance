@@ -34,9 +34,9 @@ router.post('/ai_config', async (req, res) => {
   }
 });
 
-router.get('/ai_models', async (req, res) => {
+router.post('/ai_models', async (req, res) => {
   try {
-    const apiKey = req.query.apiKey;
+    const { apiKey } = req.body;
     if (!apiKey) {
       return res.status(400).json({ error: 'API Key is required to fetch models' });
     }

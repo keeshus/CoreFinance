@@ -118,7 +118,11 @@ export const getTransactions = async (filters = {}) => {
       params.push(endDate);
     }
 
-    query += ` ORDER BY ${sortField} ${sortOrder} LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+    const allowedSortFields = ['date', 'amount', 'account', 'name_description', 'counterparty'];
+    const finalSortField = allowedSortFields.includes(sortField) ? `t.${sortField}` : 't.date';
+    const finalSortOrder = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    query += ` ORDER BY ${finalSortField} ${finalSortOrder} LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
     params.push(pageSize, offset);
 
     const res = await pool.query(query, params);

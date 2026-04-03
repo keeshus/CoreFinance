@@ -21,6 +21,10 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'default-dev-key';
 
 const pingBackend = async () => {
+  if (!INTERNAL_API_KEY) {
+    console.error('INTERNAL_API_KEY not set in Worker, cannot ping backend');
+    return;
+  }
   try {
     const res = await fetch(`${BACKEND_URL}/api/workers/ping`, {
       method: 'POST',
