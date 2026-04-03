@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount } from '../db.js';
+import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount, upsertAIModel, getAIModels } from '../db.js';
 import { AIService } from '../../shared/services/ai.js';
 
 const router = express.Router();
@@ -17,7 +17,11 @@ router.get('/', async (req, res) => {
 router.get('/ai_config', async (req, res) => {
   try {
     const config = await getSettings('ai_config');
-    res.json(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash' });
+    const models = await getAIModels();
+    res.json({
+      ...(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash' }),
+      availableModels: models
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch AI config' });
@@ -41,6 +45,12 @@ router.post('/ai_models', async (req, res) => {
       return res.status(400).json({ error: 'API Key is required to fetch models' });
     }
     const models = await AIService.listModels(apiKey);
+    
+    // Cache models in database
+    for (const model of models) {
+      await upsertAIModel(model.name, model.displayName, model.description);
+    }
+    
     res.json(models);
   } catch (err) {
     console.error(err);

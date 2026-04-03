@@ -18,7 +18,11 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
 
   useEffect(() => {
     if (aiConfig) {
-      setLocalAIConfig(aiConfig);
+      const { availableModels: cachedModels, ...config } = aiConfig;
+      setLocalAIConfig(config);
+      if (cachedModels) {
+        setAvailableModels(cachedModels);
+      }
     }
   }, [aiConfig]);
 
@@ -100,11 +104,7 @@ export default function SettingsView({ summary, onSaveAccountName, aiConfig, onS
                       <option key={m.name} value={m.name}>{m.displayName || m.name}</option>
                     ))
                   ) : (
-                    <>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                    </>
+                    <option value={localAIConfig.model}>{localAIConfig.model}</option>
                   )}
                 </select>
               </div>

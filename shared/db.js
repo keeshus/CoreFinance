@@ -75,6 +75,15 @@ export const initDb = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_models (
+        name TEXT PRIMARY KEY,
+        display_name TEXT,
+        description TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('Database schema initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
@@ -367,6 +376,28 @@ export const getTrend = async () => {
     return res.rows;
   } catch (err) {
     console.error('Error fetching trend:', err);
+    throw err;
+  }
+};
+
+export const getAIModels = async () => {
+  try {
+    const res = await pool.query('SELECT * FROM ai_models ORDER BY updated_at DESC');
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching AI models:', err);
+    return [];
+  }
+};
+
+export const upsertAIModel = async (name, displayName, description) => {
+  try {
+    await pool.query(
+      'INSERT INTO ai_models (name, display_name, description, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (name) DO UPDATE SET display_name = $2, description = $3, updated_at = CURRENT_TIMESTAMP',
+      [name, displayName, description]
+    );
+  } catch (err) {
+    console.error(`Error upserting AI model ${name}:`, err);
     throw err;
   }
 };
