@@ -33,7 +33,13 @@ const parseAmount = (amountStr) => {
   return parseFloat(clean);
 };
 
-const parseBalanceDate = (dateStr) => parseDate(dateStr, 'yyyy-MM-dd', new Date());
+const parseBalanceDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr.includes('-')) {
+    return parseDate(dateStr, 'dd-MM-yyyy', new Date());
+  }
+  return parseDate(dateStr, 'yyyy-MM-dd', new Date());
+};
 
 const extractTime = (notifications) => {
   if (!notifications) return null;
@@ -88,46 +94,62 @@ export const parseBankCsv = (content) => {
   for (const row of records) {
     let normalized = null;
 
-    // Detect ING Main
-    if (row['Amount (EUR)'] && row['Date'] && row['Date'].length === 8) {
-      const amount = parseAmount(row['Amount (EUR)']);
+    // Detect ING Main (Dutch or English headers)
+    const date = row['Date'] || row['Datum'];
+    const amountEUR = row['Amount (EUR)'] || row['Bedrag (EUR)'];
+    const account = row['Account'] || row['Rekening'];
+    const nameDescription = row['Name / Description'] || row['Naam / Omschrijving'];
+    const counterparty = row['Counterparty'] || row['Tegenrekening'];
+    const debitCredit = row['Debit/credit'] || row['Af Bij'];
+    const transactionType = row['Transaction type'] || row['Mutatiesoort'];
+    const notifications = row['Notifications'] || row['Mededelingen'];
+    const resultingBalance = row['Resulting balance'] || row['Saldo na mutatie'];
+    const tag = row['Tag'];
+
+    if (amountEUR && date && date.length === 8) {
+      const amount = parseAmount(amountEUR);
+      const isDebit = debitCredit === 'Debit' || debitCredit === 'Af';
+      
       normalized = {
-        date: parseIngMainDate(row['Date']),
-        account: row['Account'],
-        name_description: row['Name / Description'],
-        counterparty: row['Counterparty'],
-        amount: (row['Debit/credit'] === 'Debit' ? -1 : 1) * amount,
+        date: parseIngMainDate(date),
+        account: account,
+        name_description: nameDescription,
+        counterparty: counterparty,
+        amount: (isDebit ? -1 : 1) * amount,
         currency: 'EUR',
-        type: row['Transaction type'],
-        time: extractTime(row['Notifications']),
+        type: transactionType,
+        time: extractTime(notifications),
         source: 'ing_main',
-        external_id: `ing_main_${row['Date']}_${row['Amount (EUR)']}_${row['Resulting balance']}_${row['Name / Description']}`,
+        external_id: `ing_main_${date}_${amountEUR}_${resultingBalance}_${nameDescription}`,
         metadata: {
           code: row['Code'],
-          notifications: row['Notifications'],
-          resulting_balance: row['Resulting balance'],
-          tag: row['Tag']
+          notifications: notifications,
+          resulting_balance: resultingBalance,
+          tag: tag
         }
       };
     } 
     // Detect ING Savings
-    else if (row['Amount'] && row['Date'] && row['Account name'] === 'savings account') {
-      const amount = parseAmount(row['Amount']);
+    else if ((row['Amount'] || row['Bedrag']) && date && (row['Account name'] === 'savings account' || row['Naam rekening'] === 'Spaarrekening')) {
+      const amountStr = row['Amount'] || row['Bedrag'];
+      const amount = parseAmount(amountStr);
+      const isDebit = debitCredit === 'Debit' || debitCredit === 'Af';
+
       normalized = {
-        date: parseIngSavingsDate(row['Date']),
-        account: row['Account'],
-        name_description: row['Description'],
-        counterparty: row['Counterparty'],
-        amount: (row['Debit/credit'] === 'Debit' ? -1 : 1) * amount,
-        currency: row['Currency'],
-        type: row['Transaction type'],
-        time: extractTime(row['Notifications']),
+        date: parseIngSavingsDate(date),
+        account: account,
+        name_description: row['Description'] || row['Omschrijving'],
+        counterparty: counterparty,
+        amount: (isDebit ? -1 : 1) * amount,
+        currency: row['Currency'] || row['Munteenheid'] || 'EUR',
+        type: transactionType,
+        time: extractTime(notifications),
         source: 'ing_savings',
-        external_id: `ing_savings_${row['Date']}_${row['Amount']}_${row['Resulting balance']}_${row['Description']}`,
+        external_id: `ing_savings_${date}_${amountStr}_${resultingBalance}_${row['Description'] || row['Omschrijving']}`,
         metadata: {
-          account_name: row['Account name'],
-          notifications: row['Notifications'],
-          resulting_balance: row['Resulting balance']
+          account_name: row['Account name'] || row['Naam rekening'],
+          notifications: notifications,
+          resulting_balance: resultingBalance
         }
       };
     }

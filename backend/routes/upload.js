@@ -127,8 +127,12 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     const normalizedRows = parseBankCsv(txContent);
     const dailyBalances = balContent ? parseBalanceCsv(balContent) : [];
 
+    if (normalizedRows.length === 0) {
+      return res.status(400).json({ error: 'No transactions found in CSV. Please ensure your CSV uses English or Dutch headers and has a valid date format (yyyyMMdd).' });
+    }
+
     // Validation: Ensure all rows match the selected account
-    const invalidRows = normalizedRows.filter(row => row.account.replace(/\s/g, '') !== accountId.replace(/\s/g, ''));
+    const invalidRows = normalizedRows.filter(row => row.account && row.account.replace(/\s/g, '') !== accountId.replace(/\s/g, ''));
     if (invalidRows.length > 0) {
       const distinctBadAccounts = [...new Set(invalidRows.map(r => r.account))];
       return res.status(400).json({ 
