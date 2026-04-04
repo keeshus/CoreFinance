@@ -31,8 +31,6 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
   };
 
   const handleVerify = async () => {
-    console.log('UploadView: Starting verification for account:', selectedAccount);
-    console.log('UploadView: Available accounts prop:', accounts);
     if (!file || !balFile || !selectedAccount) return;
     
     const formData = new FormData();
@@ -48,6 +46,11 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
       const data = await res.json();
       
       if (!res.ok) {
+        if (data.discrepancies) {
+          setVerificationResult(data);
+          setStep('verify');
+          return;
+        }
         throw new Error(data.error || 'Verification failed');
       }
 
@@ -253,18 +256,23 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
 
             <div style={{ display: 'flex', gap: '15px' }}>
               <button 
-                onClick={() => setStep('select')}
+                onClick={() => {
+                  setStep('select');
+                  setVerificationResult(null);
+                }}
                 style={{ flex: 1, padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
               >
-                Cancel
+                {verificationResult.discrepancies.length > 0 ? 'Fix & Retry' : 'Cancel'}
               </button>
-              <button 
-                onClick={() => handleFinalSubmit()}
-                disabled={uploading}
-                style={{ flex: 2, padding: '15px', borderRadius: '16px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                {uploading ? 'Synchronizing...' : 'Import Verified Data'}
-              </button>
+              {verificationResult.discrepancies.length === 0 && (
+                <button 
+                  onClick={() => handleFinalSubmit()}
+                  disabled={uploading}
+                  style={{ flex: 2, padding: '15px', borderRadius: '16px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  {uploading ? 'Synchronizing...' : 'Import Verified Data'}
+                </button>
+              )}
             </div>
           </div>
         )}

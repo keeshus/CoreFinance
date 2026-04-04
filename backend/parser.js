@@ -1,8 +1,17 @@
 import { parse as parseCsv } from 'csv-parse/sync';
 import { parse as parseDate } from 'date-fns';
 
-const parseIngMainDate = (dateStr) => parseDate(dateStr, 'yyyyMMdd', new Date());
-const parseIngSavingsDate = (dateStr) => parseDate(dateStr, 'yyyy-MM-dd', new Date());
+const parseIngMainDate = (dateStr) => {
+  const parsed = parseDate(dateStr, 'yyyyMMdd', new Date());
+  // Adjust for potential timezone shift that moves it to previous day in UTC
+  // We want the date to be 00:00:00 local time
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+};
+
+const parseIngSavingsDate = (dateStr) => {
+  const parsed = parseDate(dateStr, 'yyyy-MM-dd', new Date());
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+};
 
 const parseAmount = (amountStr) => {
   if (!amountStr) return 0;
@@ -35,10 +44,19 @@ const parseAmount = (amountStr) => {
 
 const parseBalanceDate = (dateStr) => {
   if (!dateStr) return null;
+  let parsed;
   if (dateStr.includes('-')) {
-    return parseDate(dateStr, 'dd-MM-yyyy', new Date());
+    // Check if it is yyyy-MM-dd or dd-MM-yyyy
+    const parts = dateStr.split('-');
+    if (parts[0].length === 4) {
+      parsed = parseDate(dateStr, 'yyyy-MM-dd', new Date());
+    } else {
+      parsed = parseDate(dateStr, 'dd-MM-yyyy', new Date());
+    }
+  } else {
+    parsed = parseDate(dateStr, 'yyyy-MM-dd', new Date());
   }
-  return parseDate(dateStr, 'yyyy-MM-dd', new Date());
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 };
 
 const extractTime = (notifications) => {
@@ -65,28 +83,40 @@ export const parseBalanceCsv = (content) => {
     skip_empty_lines: true,
     delimiter,
     bom: true,
-    relax_column_count: true
+    relax_column_count: true,
+    quote: '"',
+    ltrim: true,
+    rtrim: true
   });
 
   return records.map(row => {
     // Find the balance column - it might be 'Book balance', 'Boeksaldo', 'Saldo',
     // or sometimes it's the 4th/5th column in a tab-separated file without headers
     const balanceValue = row['Book balance'] || row['Boeksaldo'] || row['Saldo'] || Object.values(row)[3] || Object.values(row)[4];
-    
+    const dateValue = row['Date'] || row['Datum'] || Object.values(row)[0];
+    const accountValue = row['Account'] || row['Rekening'] || Object.values(row)[1];
+
+    const parsedDate = parseBalanceDate(dateValue);
+    const parsedBalance = parseAmount(balanceValue);
+
     return {
-      date: parseBalanceDate(row['Date'] || row['Datum'] || Object.values(row)[0]),
-      account: row['Account'] || row['Rekening'] || Object.values(row)[1],
-      balance: parseAmount(balanceValue)
+      date: parsedDate,
+      account: accountValue,
+      balance: parsedBalance
     };
   }).filter(b => !isNaN(b.balance) && b.date instanceof Date && !isNaN(b.date.getTime()));
 };
 
 export const parseBankCsv = (content) => {
+  // Determine delimiter
+  const delimiter = content.includes(';') ? ';' : ',';
+  
   const records = parseCsv(content, {
     columns: true,
     skip_empty_lines: true,
-    delimiter: ';',
-    bom: true
+    delimiter,
+    bom: true,
+    quote: '"'
   });
 
   const normalizedRows = [];
@@ -106,12 +136,29 @@ export const parseBankCsv = (content) => {
     const resultingBalance = row['Resulting balance'] || row['Saldo na mutatie'];
     const tag = row['Tag'];
 
-    if (amountEUR && date && date.length === 8) {
+    if (amountEUR && date) {
       const amount = parseAmount(amountEUR);
       const isDebit = debitCredit === 'Debit' || debitCredit === 'Af';
       
+      let parsedDate;
+      try {
+        if (date.length === 8) {
+          parsedDate = parseIngMainDate(date);
+        } else {
+          parsedDate = parseBalanceDate(date);
+        }
+      } catch (e) {
+        console.error(`ERROR: Failed to parse date "${date}" in row:`, row);
+        continue;
+      }
+      
+      if (!parsedDate || isNaN(parsedDate.getTime())) {
+        console.error(`ERROR: Invalid date object for "${date}" in row:`, row);
+        continue;
+      }
+      
       normalized = {
-        date: parseIngMainDate(date),
+        date: parsedDate,
         account: account,
         name_description: nameDescription,
         counterparty: counterparty,

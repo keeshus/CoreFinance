@@ -51,17 +51,10 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
     const filteredBalances = dailyBalances.filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''));
 
     if (filteredTxs.length === 0) {
+      console.log(`DEBUG: No transactions for ${accountId}. First 3 txs:`, transactions.slice(0, 3));
       return res.status(400).json({ error: `No transactions found for account ${accountId} in the uploaded file.` });
     }
 
-    const discrepancies = [];
-    // 1. Use the selected account
-    const affectedAccounts = [accountId];
-    
-    // 2. Sort transactions by date to simulate import
-    const sortedTxs = [...filteredTxs].sort((a, b) => a.date - b.date);
-    
-    // Use a consistent date string helper
     const toDateStr = (d) => {
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -69,74 +62,87 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
       return `${year}-${month}-${day}`;
     };
 
-    // 3. Group transactions by date and account for cross-checking
-    const txsByDayAndAccount = sortedTxs.reduce((acc, t) => {
-      const dStr = toDateStr(t.date);
-      if (!acc[dStr]) acc[dStr] = {};
-      const accId = t.account.replace(/\s/g, '');
-      if (!acc[dStr][accId]) acc[dStr][accId] = 0;
-      acc[dStr][accId] += t.amount;
-      return acc;
-    }, {});
+    // Sort and get dates
+    const sortedTxs = [...filteredTxs].sort((a, b) => a.date - b.date);
+    const earliestTxDate = sortedTxs[0].date;
+    const latestTxDate = sortedTxs[sortedTxs.length - 1].date;
 
-    // 4. Group balance overview by day and account
+    const preDay = new Date(earliestTxDate);
+    preDay.setDate(preDay.getDate() - 1);
+    const preDayStr = toDateStr(preDay);
+
+    // 1. Validate pre-day (starting balance)
+    const startingBalanceEntry = filteredBalances.find(b => toDateStr(b.date) === preDayStr);
+    if (!startingBalanceEntry) {
+      return res.status(400).json({ 
+        error: `Missing starting balance for ${preDayStr} (day before first transaction). Balance overview must start at least one day before transactions.` 
+      });
+    }
+
+    // 2. Daily cross-reference validation
+    const discrepancies = [];
     const dailyBalanceMap = filteredBalances.reduce((acc, b) => {
-      const dStr = toDateStr(b.date);
-      if (!acc[dStr]) acc[dStr] = {};
-      acc[dStr][b.account.replace(/\s/g, '')] = b.balance;
+      acc[toDateStr(b.date)] = b.balance;
       return acc;
     }, {});
 
-    // 5. Cross check
-    const days = [...new Set([...Object.keys(txsByDayAndAccount), ...Object.keys(dailyBalanceMap)])].sort();
-    
-    for (const day of days) {
-      for (const account of affectedAccounts) {
-        const accId = account.replace(/\s/g, '');
-        const reportedBalance = dailyBalanceMap[day]?.[accId];
-        
-        if (reportedBalance !== undefined) {
-           // To verify the reported balance for 'day', we need the LAST reported balance before 'day'.
-           const prevReportedDay = days.slice(0, days.indexOf(day)).reverse().find(d => dailyBalanceMap[d]?.[accId] !== undefined);
+    const txsByDay = sortedTxs.reduce((acc, t) => {
+      const dStr = toDateStr(t.date);
+      acc[dStr] = (acc[dStr] || 0) + t.amount;
+      return acc;
+    }, {});
 
-           if (prevReportedDay) {
-             const startingBalance = dailyBalanceMap[prevReportedDay][accId];
-             
-             // Find transactions that happened AFTER prevReportedDay up to and including 'day'
-             const periodTxs = sortedTxs.filter(t => {
-               const tDateStr = toDateStr(t.date);
-               return t.account.replace(/\s/g, '') === accId && tDateStr > prevReportedDay && tDateStr <= day;
-             });
-             const periodChange = periodTxs.reduce((sum, t) => sum + t.amount, 0);
-             
-             const calculatedEndingBalance = Math.round((startingBalance + periodChange) * 100) / 100;
-             const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
-             
-             if (Math.abs(calculatedEndingBalance - reportedBalanceRounded) > 0.001) {
-               discrepancies.push({
-                 account,
-                 date: day,
-                 expected: reportedBalance,
-                 calculated: calculatedEndingBalance,
-                 diff: reportedBalance - calculatedEndingBalance,
-                 periodStart: prevReportedDay,
-                 periodEnd: day
-               });
-             }
-           }
+    // Iterate through transaction days and validate balance movement
+    let currentBalance = startingBalanceEntry.balance;
+    const txDays = [...new Set(sortedTxs.map(t => toDateStr(t.date)))].sort();
+    const latestTxDateStr = toDateStr(latestTxDate);
+
+    // Sort all reported balance days to iterate through them, but only up to the last transaction date
+    const balanceDays = Object.keys(dailyBalanceMap)
+      .filter(dStr => dStr <= latestTxDateStr)
+      .sort();
+    const allDays = [...new Set([...txDays, ...balanceDays])].sort();
+
+    for (const dayStr of allDays) {
+      const dayChange = txsByDay[dayStr] || 0;
+      currentBalance = Math.round((currentBalance + dayChange) * 100) / 100;
+      
+      const reportedBalance = dailyBalanceMap[dayStr];
+      if (reportedBalance !== undefined) {
+        const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
+        if (Math.abs(currentBalance - reportedBalanceRounded) > 0.001) {
+          discrepancies.push({
+            date: dayStr,
+            expected: reportedBalance,
+            calculated: currentBalance,
+            diff: reportedBalance - currentBalance
+          });
         }
       }
     }
 
+    if (discrepancies.length > 0) {
+      return res.status(400).json({ 
+        error: 'Balance validation failed. Transactions do not match balance overview.',
+        discrepancies,
+        summary: [{
+          account: accountId,
+          txCount: filteredTxs.length,
+          reportedDays: filteredBalances.length
+        }]
+      });
+    }
+
     res.json({ 
-      discrepancies,
       transactionCount: filteredTxs.length,
-      summary: affectedAccounts.map(acc => ({
-        account: acc,
-        txCount: filteredTxs.filter(t => t.account.replace(/\s/g, '') === acc.replace(/\s/g, '')).length,
-        reportedDays: filteredBalances.filter(b => b.account.replace(/\s/g, '') === acc.replace(/\s/g, '')).length
-      }))
+      discrepancies: [],
+      summary: [{
+        account: accountId,
+        txCount: filteredTxs.length,
+        reportedDays: filteredBalances.length
+      }]
     });
+
 
   } catch (err) {
     console.error(err);
@@ -146,12 +152,10 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
 
 router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name: 'balanceFile', maxCount: 1 }]), async (req, res) => {
   const { txContent, balContent } = getUploadFiles(req);
-  console.log('Upload Route: Received upload request');
   if (!txContent) {
     return res.status(400).json({ error: 'Transaction file is required' });
   }
   const accountId = req.body.accountId;
-  console.log('Upload Route: Target account ID:', accountId);
   if (!accountId) {
     return res.status(400).json({ error: 'Target account ID is required' });
   }
@@ -173,8 +177,85 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
     if (invalidRows.length > 0) {
       const distinctBadAccounts = [...new Set(invalidRows.map(r => r.account))];
-      return res.status(400).json({ 
-        error: `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}. Please ensure the account exists in Settings.` 
+      return res.status(400).json({
+        error: `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}. Please ensure the account exists in Settings.`
+      });
+    }
+
+    if (!balContent) {
+      return res.status(400).json({ error: 'Balance overview file is now required for all imports to ensure data integrity.' });
+    }
+
+    const toDateStr = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const sortedTxsForVal = [...normalizedRows].sort((a, b) => a.date - b.date);
+    const earliestTxDate = sortedTxsForVal[0].date;
+    const latestTxDate = sortedTxsForVal[sortedTxsForVal.length - 1].date;
+
+    const preDay = new Date(earliestTxDate);
+    preDay.setDate(preDay.getDate() - 1);
+    const preDayStr = toDateStr(preDay);
+
+    const filteredBalancesForVal = dailyBalances.filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''));
+    
+    // 1. Validate pre-day (starting balance)
+    const startingBalanceEntry = filteredBalancesForVal.find(b => toDateStr(b.date) === preDayStr);
+    if (!startingBalanceEntry) {
+      return res.status(400).json({
+        error: `Missing starting balance for ${preDayStr} (day before first transaction). Balance overview must start at least one day before transactions.`
+      });
+    }
+
+    // 2. Daily cross-reference validation
+    const discrepancies = [];
+    const dailyBalanceMap = filteredBalancesForVal.reduce((acc, b) => {
+      acc[toDateStr(b.date)] = b.balance;
+      return acc;
+    }, {});
+
+    const txsByDay = sortedTxsForVal.reduce((acc, t) => {
+      const dStr = toDateStr(t.date);
+      acc[dStr] = (acc[dStr] || 0) + t.amount;
+      return acc;
+    }, {});
+
+    let validationBalance = startingBalanceEntry.balance;
+    const txDays = [...new Set(sortedTxsForVal.map(t => toDateStr(t.date)))].sort();
+    const latestTxDateStr = toDateStr(latestTxDate);
+    
+    // Sort all reported balance days to iterate through them, but only up to the last transaction date
+    const balanceDays = Object.keys(dailyBalanceMap)
+      .filter(dStr => dStr <= latestTxDateStr)
+      .sort();
+    const allDays = [...new Set([...txDays, ...balanceDays])].sort();
+
+    for (const dayStr of allDays) {
+      const dayChange = txsByDay[dayStr] || 0;
+      validationBalance = Math.round((validationBalance + dayChange) * 100) / 100;
+      
+      const reportedBalance = dailyBalanceMap[dayStr];
+      if (reportedBalance !== undefined) {
+        const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
+        if (Math.abs(validationBalance - reportedBalanceRounded) > 0.001) {
+          discrepancies.push({
+            date: dayStr,
+            expected: reportedBalance,
+            calculated: validationBalance,
+            diff: reportedBalance - validationBalance
+          });
+        }
+      }
+    }
+
+    if (discrepancies.length > 0) {
+      return res.status(400).json({
+        error: 'Balance validation failed. Transactions do not match balance overview.',
+        discrepancies
       });
     }
 
@@ -186,108 +267,28 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
       await client.query('BEGIN');
       
-      // If we have a balance file, try to establish or update the initial balance anchor
-      if (dailyBalances.length > 0) {
-          const earliestTxDate = normalizedRows.reduce((min, r) => r.date < min ? r.date : min, normalizedRows[0].date);
-          
-          const toDateStr = (d) => {
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          };
-
-          // Strategy 1: Look for the balance on the day BEFORE the first transaction (Cleanest anchor)
-          const dayBeforeTxDate = new Date(earliestTxDate);
-          dayBeforeTxDate.setDate(dayBeforeTxDate.getDate() - 1);
-          const dayBeforeTxDateStr = toDateStr(dayBeforeTxDate);
-
-          const reportedBalanceDayBefore = dailyBalances.find(b => {
-            return b.account.replace(/\s/g, '') === accountId.replace(/\s/g, '') && toDateStr(b.date) === dayBeforeTxDateStr;
-          });
-
-          if (reportedBalanceDayBefore) {
-            const id = await insertTransaction(client, {
-              date: dayBeforeTxDate,
-              time: '00:00:00',
+      // Use pre-day balance to set or adjust initial balance
+      const initialBalId = await insertTransaction(client, {
+        date: preDay,
+        time: '00:00:00',
+        account: accountId,
+        name_description: 'Initial Balance Adjustment',
+        counterparty: 'SYSTEM',
+        amount: startingBalanceEntry.balance,
+        currency: 'EUR',
+        type: 'INITIAL_BALANCE',
+        source: 'system',
+        external_id: `initial_balance_${accountId}_${preDayStr}`,
+        metadata: { source: 'balance_file', anchor_type: 'pre_day', anchor_date: preDayStr }
+      });
+      if (initialBalId) rowIds.push(initialBalId);
+      // Save official daily balances
+      for (const bal of filteredBalancesForVal) {
+          await upsertDailyBalance(client, {
+              date: bal.date,
               account: accountId,
-              name_description: 'Initial Balance Adjustment',
-              counterparty: 'SYSTEM',
-              amount: reportedBalanceDayBefore.balance,
-              currency: 'EUR',
-              type: 'INITIAL_BALANCE',
-              source: 'system',
-              external_id: `initial_balance_${accountId}`,
-              metadata: { source: 'balance_file', anchor_type: 'day_before', anchor_date: dayBeforeTxDateStr }
-            });
-            if (id) rowIds.push(id);
-          } else {
-            // Strategy 2: Look for the balance on the EARLIEST day available in the balance file
-            // as long as it's NOT after the earliest transaction.
-            const sortedBalances = [...dailyBalances]
-              .filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''))
-              .sort((a, b) => a.date - b.date);
-            
-            const earliestReportedBalance = sortedBalances[0];
-            
-            if (earliestReportedBalance) {
-               const reportedDateStr = toDateStr(earliestReportedBalance.date);
-               
-               // If it's on the same day as earliest transaction, calculate start-of-day balance
-               if (reportedDateStr === toDateStr(earliestTxDate)) {
-                  const dayTxsSum = normalizedRows
-                    .filter(r => toDateStr(r.date) === reportedDateStr)
-                    .reduce((sum, r) => sum + r.amount, 0);
-                  const startingBalance = earliestReportedBalance.balance - dayTxsSum;
-                  
-                  const initDate = new Date(earliestTxDate);
-                  initDate.setDate(initDate.getDate() - 1);
-
-                  const id = await insertTransaction(client, {
-                    date: initDate,
-                    time: '00:00:00',
-                    account: accountId,
-                    name_description: 'Initial Balance Adjustment (Calculated)',
-                    counterparty: 'SYSTEM',
-                    amount: startingBalance,
-                    currency: 'EUR',
-                    type: 'INITIAL_BALANCE',
-                    source: 'system',
-                    external_id: `initial_balance_${accountId}`,
-                    metadata: { source: 'balance_file', anchor_type: 'same_day_calculation', anchor_date: reportedDateStr }
-                  });
-                  if (id) rowIds.push(id);
-               }
-               // If it's even earlier, just use it as is
-               else if (earliestReportedBalance.date < earliestTxDate) {
-                  const id = await insertTransaction(client, {
-                    date: earliestReportedBalance.date,
-                    time: '00:00:00',
-                    account: accountId,
-                    name_description: 'Initial Balance Adjustment',
-                    counterparty: 'SYSTEM',
-                    amount: earliestReportedBalance.balance,
-                    currency: 'EUR',
-                    type: 'INITIAL_BALANCE',
-                    source: 'system',
-                    external_id: `initial_balance_${accountId}`,
-                    metadata: { source: 'balance_file', anchor_type: 'early_reported', anchor_date: reportedDateStr }
-                  });
-                  if (id) rowIds.push(id);
-               }
-            }
-          }
-      }
-
-      // Save official daily balances if provided
-      for (const bal of dailyBalances) {
-          if (bal.account.replace(/\s/g, '') === accountId.replace(/\s/g, '')) {
-              await upsertDailyBalance(client, {
-                  date: bal.date,
-                  account: accountId,
-                  balance: bal.balance
-              });
-          }
+              balance: bal.balance
+          });
       }
 
       for (const row of normalizedRows) {
