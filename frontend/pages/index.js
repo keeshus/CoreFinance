@@ -260,6 +260,12 @@ export default function Home() {
             });
             fetchRules();
           }}
+          onDeleteRule={async (id) => {
+            await fetch(`/api/rules/${id}`, {
+              method: 'DELETE'
+            });
+            fetchRules();
+          }}
         />
       )}
 

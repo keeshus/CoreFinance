@@ -110,6 +110,15 @@ export const initDb = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS daily_balances (
+        date DATE NOT NULL,
+        account TEXT NOT NULL,
+        balance DECIMAL(12, 2) NOT NULL,
+        PRIMARY KEY (date, account)
+      );
+    `);
+
     console.log('Database schema initialized');
   } catch (err) {
     console.error('Error initializing database:', err);
@@ -180,17 +189,36 @@ export const getTransactionsByIds = async (ids) => {
 
 export const insertTransaction = async (client, data) => {
   try {
-    const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id } = data;
+    const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata } = data;
     const res = await client.query(
-      `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, external_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (external_id) DO UPDATE SET external_id = EXCLUDED.external_id
+      `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (external_id) DO UPDATE SET
+         date = EXCLUDED.date,
+         time = EXCLUDED.time,
+         amount = EXCLUDED.amount,
+         metadata = EXCLUDED.metadata
        RETURNING id`,
-      [date, time, account, name_description, counterparty, amount, currency, type, source, external_id]
+      [date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata || {}]
     );
     return res.rows[0]?.id;
   } catch (err) {
     console.error('Error inserting transaction:', err);
+    throw err;
+  }
+};
+
+export const upsertDailyBalance = async (client, data) => {
+  try {
+    const { date, account, balance } = data;
+    await client.query(
+      `INSERT INTO daily_balances (date, account, balance)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (date, account) DO UPDATE SET balance = EXCLUDED.balance`,
+      [date, account, balance]
+    );
+  } catch (err) {
+    console.error('Error upserting daily balance:', err);
     throw err;
   }
 };
@@ -366,13 +394,15 @@ export const getSummary = async () => {
       SELECT
         an.account,
         an.display_name as account_display_name,
-        COALESCE(SUM(t.amount), 0) as balance,
-        COALESCE(t.currency, 'EUR') as currency,
-        MAX(t.date) as last_transaction,
+        COALESCE(
+          (SELECT balance FROM daily_balances db WHERE db.account = an.account ORDER BY db.date DESC LIMIT 1),
+          (SELECT SUM(amount) FROM transactions WHERE account = an.account),
+          0
+        ) as balance,
+        'EUR' as currency,
+        (SELECT MAX(date) FROM transactions WHERE account = an.account) as last_transaction,
         an.ai_enabled
       FROM account_names an
-      LEFT JOIN transactions t ON an.account = t.account
-      GROUP BY an.account, an.display_name, an.ai_enabled, t.currency
     `);
     return res.rows;
   } catch (err) {
@@ -384,15 +414,41 @@ export const getSummary = async () => {
 export const getTrend = async () => {
   try {
     const res = await pool.query(`
+      WITH trend_data AS (
+        SELECT
+          t.date,
+          t.account,
+          t.amount,
+          t.time,
+          t.id,
+          t.metadata->'ai_categories' as categories
+        FROM transactions t
+        JOIN account_names an ON t.account = an.account
+        
+        UNION ALL
+        
+        SELECT
+          db.date,
+          db.account,
+          0 as amount,
+          NULL as time,
+          -1 as id,
+          NULL as categories
+        FROM daily_balances db
+        JOIN account_names an ON db.account = an.account
+        WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE account = db.account AND date = db.date)
+      )
       SELECT
-        t.date,
-        t.account,
-        SUM(t.amount) OVER (PARTITION BY t.account ORDER BY t.date) as balance,
-        t.amount,
-        t.metadata->'ai_categories' as categories
-      FROM transactions t
-      JOIN account_names an ON t.account = an.account
-      ORDER BY t.date ASC
+        date,
+        account,
+        COALESCE(
+          (SELECT balance FROM daily_balances WHERE account = trend_data.account AND date = trend_data.date),
+          SUM(amount) OVER (PARTITION BY account ORDER BY date, time NULLS FIRST, id)
+        ) as balance,
+        amount,
+        categories
+      FROM trend_data
+      ORDER BY date ASC, time ASC NULLS FIRST, id ASC
     `);
     return res.rows;
   } catch (err) {
@@ -425,6 +481,15 @@ export const upsertAIModel = async (name, displayName, description) => {
 
 export const setAccountName = async (account, displayName, aiEnabled) => {
   return updateAccountName(account, displayName, aiEnabled);
+};
+
+export const deleteRule = async (id) => {
+  try {
+    await pool.query('DELETE FROM rules WHERE id = $1', [id]);
+  } catch (err) {
+    console.error(`Error deleting rule ${id}:`, err);
+    throw err;
+  }
 };
 
 export const updateRuleStatus = async (id, isActive, isProposed) => {

@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { insertTransaction, pool, createJob } from '../db.js';
+import { insertTransaction, upsertDailyBalance, pool, createJob } from '../db.js';
 import { parseBankCsv, parseBalanceCsv } from '../parser.js';
 import { aiQueue } from '../queue.js';
 
@@ -16,11 +16,12 @@ const getUploadFiles = (req) => {
   };
 };
 
-const validateAccount = async (client, accountId) => {
-  const accountExistsRes = await client.query('SELECT 1 FROM account_names WHERE account = $1', [accountId]);
-  if (accountExistsRes.rows.length === 0) {
+const getAccountSettings = async (client, accountId) => {
+  const res = await client.query('SELECT ai_enabled FROM account_names WHERE account = $1', [accountId]);
+  if (res.rows.length === 0) {
     throw new Error(`Account ${accountId} does not exist. Please create it in Settings first.`);
   }
+  return res.rows[0];
 };
 
 router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name: 'balanceFile', maxCount: 1 }]), async (req, res) => {
@@ -37,7 +38,7 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
   try {
     const client = await pool.connect();
     try {
-      await validateAccount(client, accountId);
+      await getAccountSettings(client, accountId);
     } finally {
       client.release();
     }
@@ -60,9 +61,17 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
     // 2. Sort transactions by date to simulate import
     const sortedTxs = [...filteredTxs].sort((a, b) => a.date - b.date);
     
+    // Use a consistent date string helper
+    const toDateStr = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     // 3. Group transactions by date and account for cross-checking
     const txsByDayAndAccount = sortedTxs.reduce((acc, t) => {
-      const dStr = t.date.toISOString().split('T')[0];
+      const dStr = toDateStr(t.date);
       if (!acc[dStr]) acc[dStr] = {};
       const accId = t.account.replace(/\s/g, '');
       if (!acc[dStr][accId]) acc[dStr][accId] = 0;
@@ -72,7 +81,7 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
 
     // 4. Group balance overview by day and account
     const dailyBalanceMap = filteredBalances.reduce((acc, b) => {
-      const dStr = b.date.toISOString().split('T')[0];
+      const dStr = toDateStr(b.date);
       if (!acc[dStr]) acc[dStr] = {};
       acc[dStr][b.account.replace(/\s/g, '')] = b.balance;
       return acc;
@@ -95,7 +104,7 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
              
              // Find transactions that happened AFTER prevReportedDay up to and including 'day'
              const periodTxs = sortedTxs.filter(t => {
-               const tDateStr = t.date.toISOString().split('T')[0];
+               const tDateStr = toDateStr(t.date);
                return t.account.replace(/\s/g, '') === accId && tDateStr > prevReportedDay && tDateStr <= day;
              });
              const periodChange = periodTxs.reduce((sum, t) => sum + t.amount, 0);
@@ -173,42 +182,111 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     const rowIds = [];
     
     try {
-      await validateAccount(client, accountId);
-
-      // Check for new accounts (in transactions table)
-      const existingAccountInTxsRes = await client.query('SELECT 1 FROM transactions WHERE account = $1 LIMIT 1', [accountId]);
-      const isFirstImport = existingAccountInTxsRes.rows.length === 0;
+      const accountSettings = await getAccountSettings(client, accountId);
 
       await client.query('BEGIN');
       
-      // Insert initial balance transactions from balance overview if available
-      if (isFirstImport) {
-          const earliestDate = normalizedRows.reduce((min, r) => r.date < min ? r.date : min, normalizedRows[0].date);
+      // If we have a balance file, try to establish or update the initial balance anchor
+      if (dailyBalances.length > 0) {
+          const earliestTxDate = normalizedRows.reduce((min, r) => r.date < min ? r.date : min, normalizedRows[0].date);
           
-          const initDate = new Date(earliestDate);
-          initDate.setDate(initDate.getDate() - 1);
-          const initDateStr = initDate.toISOString().split('T')[0];
+          const toDateStr = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
 
-          const reportedBalance = dailyBalances.find(b => {
-            const bDateStr = b.date.toISOString().split('T')[0];
-            return b.account.replace(/\s/g, '') === accountId.replace(/\s/g, '') && bDateStr === initDateStr;
+          // Strategy 1: Look for the balance on the day BEFORE the first transaction (Cleanest anchor)
+          const dayBeforeTxDate = new Date(earliestTxDate);
+          dayBeforeTxDate.setDate(dayBeforeTxDate.getDate() - 1);
+          const dayBeforeTxDateStr = toDateStr(dayBeforeTxDate);
+
+          const reportedBalanceDayBefore = dailyBalances.find(b => {
+            return b.account.replace(/\s/g, '') === accountId.replace(/\s/g, '') && toDateStr(b.date) === dayBeforeTxDateStr;
           });
 
-          if (reportedBalance) {
+          if (reportedBalanceDayBefore) {
             const id = await insertTransaction(client, {
-              date: initDate,
+              date: dayBeforeTxDate,
+              time: '00:00:00',
               account: accountId,
               name_description: 'Initial Balance Adjustment',
               counterparty: 'SYSTEM',
-              amount: reportedBalance.balance,
+              amount: reportedBalanceDayBefore.balance,
               currency: 'EUR',
               type: 'INITIAL_BALANCE',
               source: 'system',
-              external_id: `initial_balance_${accountId}`
+              external_id: `initial_balance_${accountId}`,
+              metadata: { source: 'balance_file', anchor_type: 'day_before', anchor_date: dayBeforeTxDateStr }
             });
             if (id) rowIds.push(id);
-            // Note: The initial balance adjustment isn't in normalizedRows,
-            // so we don't need to add it there for AI processing yet.
+          } else {
+            // Strategy 2: Look for the balance on the EARLIEST day available in the balance file
+            // as long as it's NOT after the earliest transaction.
+            const sortedBalances = [...dailyBalances]
+              .filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''))
+              .sort((a, b) => a.date - b.date);
+            
+            const earliestReportedBalance = sortedBalances[0];
+            
+            if (earliestReportedBalance) {
+               const reportedDateStr = toDateStr(earliestReportedBalance.date);
+               
+               // If it's on the same day as earliest transaction, calculate start-of-day balance
+               if (reportedDateStr === toDateStr(earliestTxDate)) {
+                  const dayTxsSum = normalizedRows
+                    .filter(r => toDateStr(r.date) === reportedDateStr)
+                    .reduce((sum, r) => sum + r.amount, 0);
+                  const startingBalance = earliestReportedBalance.balance - dayTxsSum;
+                  
+                  const initDate = new Date(earliestTxDate);
+                  initDate.setDate(initDate.getDate() - 1);
+
+                  const id = await insertTransaction(client, {
+                    date: initDate,
+                    time: '00:00:00',
+                    account: accountId,
+                    name_description: 'Initial Balance Adjustment (Calculated)',
+                    counterparty: 'SYSTEM',
+                    amount: startingBalance,
+                    currency: 'EUR',
+                    type: 'INITIAL_BALANCE',
+                    source: 'system',
+                    external_id: `initial_balance_${accountId}`,
+                    metadata: { source: 'balance_file', anchor_type: 'same_day_calculation', anchor_date: reportedDateStr }
+                  });
+                  if (id) rowIds.push(id);
+               }
+               // If it's even earlier, just use it as is
+               else if (earliestReportedBalance.date < earliestTxDate) {
+                  const id = await insertTransaction(client, {
+                    date: earliestReportedBalance.date,
+                    time: '00:00:00',
+                    account: accountId,
+                    name_description: 'Initial Balance Adjustment',
+                    counterparty: 'SYSTEM',
+                    amount: earliestReportedBalance.balance,
+                    currency: 'EUR',
+                    type: 'INITIAL_BALANCE',
+                    source: 'system',
+                    external_id: `initial_balance_${accountId}`,
+                    metadata: { source: 'balance_file', anchor_type: 'early_reported', anchor_date: reportedDateStr }
+                  });
+                  if (id) rowIds.push(id);
+               }
+            }
+          }
+      }
+
+      // Save official daily balances if provided
+      for (const bal of dailyBalances) {
+          if (bal.account.replace(/\s/g, '') === accountId.replace(/\s/g, '')) {
+              await upsertDailyBalance(client, {
+                  date: bal.date,
+                  account: accountId,
+                  balance: bal.balance
+              });
           }
       }
 
@@ -222,14 +300,17 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
       await client.query('COMMIT');
       
-      // Trigger AI analysis in the background via BullMQ
-      const jobPayload = { transactionIds: rowIds };
-      const jobId = await createJob('ai_categorization', jobPayload);
-      
-      await aiQueue.add('analyze', {
-        transactions: normalizedRows,
-        jobId: jobId
-      });
+      let jobId = null;
+      if (rowIds.length > 0 && accountSettings?.ai_enabled) {
+        // Trigger AI analysis in the background via BullMQ
+        const jobPayload = { transactionIds: rowIds };
+        jobId = await createJob('ai_categorization', jobPayload);
+        
+        await aiQueue.add('analyze', {
+          transactions: normalizedRows.filter(r => rowIds.includes(r.id)),
+          jobId: jobId
+        });
+      }
 
       res.json({
         message: `Successfully processed ${normalizedRows.length} records for account ${accountId}`,

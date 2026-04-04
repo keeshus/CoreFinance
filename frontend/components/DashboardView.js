@@ -67,13 +67,25 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
       activeTrend = trend.filter(item => item.account === selectedAccount);
     } else {
       // Aggregate by date for all accounts
-      const aggregated = trend.reduce((acc, item) => {
-        const date = item.date;
-        if (!acc[date]) acc[date] = 0;
-        acc[date] += parseFloat(item.balance);
-        return acc;
-      }, {});
-      activeTrend = Object.entries(aggregated).map(([date, balance]) => ({ date, balance }));
+      // To correctly calculate the total net worth over time, we need to track the
+      // latest balance of EACH account and sum them for each date.
+      const lastBalances = {};
+      const dailyTotals = {};
+      
+      // trend is sorted by date, time, and id from the backend
+      trend.forEach(item => {
+        // Use local date string instead of UTC to match the user's perception and iter loop
+        const dateObj = new Date(item.date);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        
+        lastBalances[item.account] = parseFloat(item.balance);
+        dailyTotals[dateStr] = Object.values(lastBalances).reduce((sum, b) => sum + b, 0);
+      });
+      
+      activeTrend = Object.entries(dailyTotals).map(([date, balance]) => ({ date, balance }));
     }
 
     const now = new Date();
@@ -92,7 +104,18 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
     }
 
     const trendMap = activeTrend.reduce((acc, item) => {
-      const d = new Date(item.date).toISOString().split('T')[0];
+      // If item.date is already a short date string (YYYY-MM-DD), use it directly.
+      // Otherwise (like in filtered single account trend), parse it.
+      let d;
+      if (item.date.length === 10) {
+        d = item.date;
+      } else {
+        const dateObj = new Date(item.date);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        d = `${year}-${month}-${day}`;
+      }
       acc[d] = parseFloat(item.balance);
       return acc;
     }, {});
@@ -110,7 +133,10 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
 
     const iter = new Date(cutoff);
     while (iter <= now) {
-      const dStr = iter.toISOString().split('T')[0];
+      const year = iter.getFullYear();
+      const month = String(iter.getMonth() + 1).padStart(2, '0');
+      const day = String(iter.getDate()).padStart(2, '0');
+      const dStr = `${year}-${month}-${day}`;
       if (trendMap[dStr] !== undefined) {
         currentBalance = trendMap[dStr];
       }
@@ -441,65 +467,113 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
         </div>
       </div>
 
-      {categoryData.length > 0 && (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '20px' }}>
         <div style={{ background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Sparkles size={18} color="#7c3aed" /> Spending by Category
+            <TrendingUp size={18} color="#3b82f6" /> Balance Over Time
           </h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
-            {categoryData.map((cat, index) => {
-              const isDeselected = deselectedCategories.includes(cat.name);
-              const info = CATEGORY_MAP[cat.name] || CATEGORY_MAP['Uncategorized'];
-              return (
-                <button
-                  key={cat.name}
-                  onClick={() => toggleCategory(cat.name)}
-                  style={{
-                    padding: '4px 10px', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer',
-                    background: isDeselected ? '#f1f5f9' : info.bg,
-                    color: isDeselected ? '#94a3b8' : info.color,
-                    border: `1px solid ${isDeselected ? '#e2e8f0' : info.color + '33'}`, transition: 'all 0.2s',
-                    textDecoration: isDeselected ? 'line-through' : 'none',
-                    display: 'flex', alignItems: 'center', gap: '5px'
-                  }}
-                >
-                  {!isDeselected && <info.icon size={12} />}
-                  {cat.name}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ height: `${Math.max(300, filteredCategoryData.length * 45)}px` }}>
+          <div style={{ height: '350px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={filteredCategoryData}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                <XAxis type="number" hide />
-                <YAxis 
-                  dataKey="name" 
-                  type="category" 
-                  width={90}
-                  tick={{ fontSize: 12, fontWeight: 'bold', fill: '#64748b' }}
+              <AreaChart data={filteredTrend} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: '#64748b' }}
+                  tickFormatter={(str) => {
+                    const date = new Date(str);
+                    return date.toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' });
+                  }}
+                  minTickGap={30}
                 />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
+                <YAxis
+                  tick={{ fontSize: 10, fill: '#64748b' }}
+                  tickFormatter={(val) => formatCurrency(val).replace(',00', '')}
+                />
+                <Tooltip
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                  formatter={(val) => [formatCurrency(val), 'Spending']}
+                  formatter={(val) => [formatCurrency(val), 'Balance']}
+                  labelFormatter={(label) => new Date(label).toLocaleDateString('nl-NL', { day: '2-digit', month: 'long', year: 'numeric' })}
                 />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={25}>
-                  {filteredCategoryData.map((entry, index) => {
-                    const info = CATEGORY_MAP[entry.name] || CATEGORY_MAP['Uncategorized'];
-                    return <Cell key={`cell-${index}`} fill={info.color} />;
-                  })}
-                </Bar>
-              </BarChart>
+                <Area 
+                  type="monotone" 
+                  dataKey="amount" 
+                  stroke="#3b82f6" 
+                  strokeWidth={3}
+                  fillOpacity={1} 
+                  fill="url(#colorAmount)" 
+                  animationDuration={1500}
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-      )}
+
+        {categoryData.length > 0 && (
+          <div style={{ background: '#fff', padding: '25px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Sparkles size={18} color="#7c3aed" /> Spending by Category
+            </h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
+              {categoryData.map((cat, index) => {
+                const isDeselected = deselectedCategories.includes(cat.name);
+                const info = CATEGORY_MAP[cat.name] || CATEGORY_MAP['Uncategorized'];
+                return (
+                  <button
+                    key={cat.name}
+                    onClick={() => toggleCategory(cat.name)}
+                    style={{
+                      padding: '4px 10px', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer',
+                      background: isDeselected ? '#f1f5f9' : info.bg,
+                      color: isDeselected ? '#94a3b8' : info.color,
+                      border: `1px solid ${isDeselected ? '#e2e8f0' : info.color + '33'}`, transition: 'all 0.2s',
+                      textDecoration: isDeselected ? 'line-through' : 'none',
+                      display: 'flex', alignItems: 'center', gap: '5px'
+                    }}
+                  >
+                    {!isDeselected && <info.icon size={12} />}
+                    {cat.name}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ height: `350px`, overflowY: 'auto' }}>
+              <ResponsiveContainer width="100%" height={Math.max(300, filteredCategoryData.length * 45)}>
+                <BarChart
+                  data={filteredCategoryData}
+                  layout="vertical"
+                  margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                  <XAxis type="number" hide />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    width={90}
+                    tick={{ fontSize: 12, fontWeight: 'bold', fill: '#64748b' }}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    formatter={(val) => [formatCurrency(val), 'Spending']}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={25}>
+                    {filteredCategoryData.map((entry, index) => {
+                      const info = CATEGORY_MAP[entry.name] || CATEGORY_MAP['Uncategorized'];
+                      return <Cell key={`cell-${index}`} fill={info.color} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div style={{ background: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
         <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '15px' }}>

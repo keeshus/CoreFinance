@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Plus, Check, X, AlertTriangle, Zap } from 'lucide-react';
 
-export default function RulesView({ rules, onAddRule, onUpdateRuleStatus }) {
+export default function RulesView({ rules, onAddRule, onUpdateRuleStatus, onDeleteRule }) {
   const [newRuleName, setNewRuleName] = useState('');
   const [newRulePattern, setNewRulePattern] = useState('');
 
@@ -57,19 +57,27 @@ export default function RulesView({ rules, onAddRule, onUpdateRuleStatus }) {
                padding: '15px 20px', background: rule.is_active ? '#f8fafc' : '#f1f5f9', 
                borderRadius: '16px', border: '1px solid #f1f5f9', opacity: rule.is_active ? 1 : 0.6
              }}>
-               <div>
+               <div style={{ flex: 1 }}>
                  <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{rule.name}</div>
                  <div style={{ fontSize: '0.9em', color: '#64748b' }}>{rule.pattern}</div>
                </div>
-               <button 
-                 onClick={() => onUpdateRuleStatus(rule.id, !rule.is_active, false)}
-                 style={{ 
-                   padding: '8px 16px', background: rule.is_active ? '#ef4444' : '#10b981', 
-                   color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.8em', fontWeight: 'bold', cursor: 'pointer' 
-                 }}
-               >
-                 {rule.is_active ? 'Disable' : 'Enable'}
-               </button>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                 <button 
+                   onClick={() => onUpdateRuleStatus(rule.id, !rule.is_active, false)}
+                   style={{ 
+                     padding: '8px 16px', background: rule.is_active ? '#ef4444' : '#10b981', 
+                     color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.8em', fontWeight: 'bold', cursor: 'pointer' 
+                   }}
+                 >
+                   {rule.is_active ? 'Disable' : 'Enable'}
+                 </button>
+                 <button 
+                   onClick={() => onDeleteRule(rule.id)}
+                   style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                 >
+                   <X size={16} />
+                 </button>
+               </div>
              </div>
            ))}
          </div>
@@ -101,7 +109,7 @@ export default function RulesView({ rules, onAddRule, onUpdateRuleStatus }) {
                    <Check size={18} />
                  </button>
                  <button 
-                   onClick={() => onUpdateRuleStatus(rule.id, false, false)}
+                   onClick={() => onDeleteRule(rule.id)}
                    style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer' }}
                  >
                    <X size={18} />

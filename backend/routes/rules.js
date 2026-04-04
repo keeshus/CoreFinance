@@ -1,5 +1,5 @@
 import express from 'express';
-import { getRules, addRule, updateRuleStatus } from '../db.js';
+import { getRules, addRule, updateRuleStatus, deleteRule } from '../db.js';
 
 const router = express.Router();
 
@@ -33,6 +33,17 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update rule' });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await deleteRule(id);
+    res.json({ message: 'Rule deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete rule' });
   }
 });
 
