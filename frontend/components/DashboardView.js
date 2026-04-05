@@ -365,13 +365,21 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                 </div>
               )}
 
-              {selectedTransaction.metadata?.rule_violations?.length > 0 && (
+              {selectedTransaction.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0 && (
                 <div style={{ background: '#fffbeb', padding: '15px', borderRadius: '16px', border: '1px solid #fef3c7' }}>
                   <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#d97706', fontWeight: 'bold', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <ShieldCheck size={14} /> Rule Violations
                   </div>
                   <ul style={{ margin: '5px 0 0', paddingLeft: '20px', fontSize: '0.9em', color: '#92400e' }}>
-                    {selectedTransaction.metadata.rule_violations.map((v, i) => <li key={i}>{v}</li>)}
+                    {selectedTransaction.metadata.rule_violations
+                      .filter(v => v && v !== 'none' && v !== 'None')
+                      .map((v, i) => (
+                      <li key={i}>
+                        {typeof v === 'object' ? (
+                          <span><strong>Rule {v.rule_id}:</strong> {v.reason}</span>
+                        ) : v}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -383,7 +391,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {Object.entries(selectedTransaction.metadata).map(([key, value]) => {
-                      if (!value || value === '') return null;
+                      if (!value || value === '' || key === 'rule_violations' || key === 'anomaly_reason' || key === 'is_anomalous') return null;
                       return (
                         <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
                           <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
@@ -684,7 +692,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                         <div style={{ fontSize: '0.9em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                           {t.name_description}
                           {t.metadata?.is_anomalous && <AlertCircle size={14} color="#ef4444" />}
-                          {t.metadata?.rule_violations?.length > 0 && <ShieldCheck size={14} color="#f59e0b" />}
+                          {t.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0 && <ShieldCheck size={14} color="#f59e0b" />}
                         </div>
                         <div style={{ fontSize: '0.75em', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           {t.account_display_name}

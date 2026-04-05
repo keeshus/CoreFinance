@@ -157,7 +157,16 @@ export const getTransactions = async (filters = {}) => {
     let paramIdx = 1;
 
     if (deviationsOnly) {
-      query += ` AND (t.metadata->>'is_anomalous' = 'true' OR jsonb_array_length(t.metadata->'rule_violations') > 0)`;
+      query += ` AND (
+        t.metadata->>'is_anomalous' = 'true' 
+        OR (
+          jsonb_typeof(t.metadata->'rule_violations') = 'array'
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(t.metadata->'rule_violations') AS v 
+            WHERE v::text != '"none"' AND v::text != '"None"'
+          )
+        )
+      )`;
     }
 
     if (account !== 'all') {

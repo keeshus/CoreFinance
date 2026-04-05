@@ -156,6 +156,8 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     return res.status(400).json({ error: 'Transaction file is required' });
   }
   const accountId = req.body.accountId;
+  const disableAnomaly = req.body.disableAnomaly === 'true';
+
   if (!accountId) {
     return res.status(400).json({ error: 'Target account ID is required' });
   }
@@ -304,12 +306,13 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       let jobId = null;
       if (rowIds.length > 0 && accountSettings?.ai_enabled) {
         // Trigger AI analysis in the background via BullMQ
-        const jobPayload = { transactionIds: rowIds };
+        const jobPayload = { transactionIds: rowIds, disableAnomalyDetection };
         jobId = await createJob('ai_categorization', jobPayload);
         
         await aiQueue.add('analyze', {
           transactions: normalizedRows.filter(r => rowIds.includes(r.id)),
-          jobId: jobId
+          jobId: jobId,
+          disableAnomalyDetection
         });
       }
 

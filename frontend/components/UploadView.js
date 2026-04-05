@@ -6,6 +6,7 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
   const [step, setStep] = React.useState('select'); // 'select', 'verify', 'processing'
   const [selectedAccount, setSelectedAccount] = React.useState('');
   const [currentJob, setCurrentJob] = React.useState(null);
+  const [disableAnomaly, setDisableAnomaly] = React.useState(false);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount);
@@ -69,6 +70,7 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
     const formData = new FormData();
     formData.append('transactionFile', file);
     formData.append('accountId', selectedAccount);
+    formData.append('disableAnomaly', disableAnomaly);
     if (balFile) {
       formData.append('balanceFile', balFile);
     }
@@ -132,6 +134,19 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
                   <div style={{ fontSize: '0.85em', fontWeight: 'bold', wordBreak: 'break-all' }}>{balFile ? balFile.name : 'Balance CSV'}</div>
                   {!balFile && <div style={{ fontSize: '0.7em', color: '#64748b', marginTop: '5px' }}>Mandatory for Verification</div>}
                </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '15px 20px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+               <input 
+                 type="checkbox" 
+                 id="disableAnomaly" 
+                 checked={disableAnomaly}
+                 onChange={(e) => setDisableAnomaly(e.target.checked)}
+                 style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+               />
+               <label htmlFor="disableAnomaly" style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#475569', cursor: 'pointer' }}>
+                 Baseline Import (Disable Anomaly Detection for this batch)
+               </label>
             </div>
 
             <button 

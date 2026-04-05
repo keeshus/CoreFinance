@@ -59,7 +59,7 @@ pingBackend(); // Initial ping
 console.log('Worker starting...');
 
 const worker = new Worker('ai-processing', async (job) => {
-  const { transactions, jobId } = job.data;
+  const { transactions, jobId, disableAnomalyDetection } = job.data;
   
   try {
     const config = await getSettings('ai_config');
@@ -100,7 +100,7 @@ const worker = new Worker('ai-processing', async (job) => {
         log: `Analyzing chunk ${chunkNum} of ${totalChunks}...` 
       });
 
-      const results = await aiService.processBatch(chunk, activeRules);
+      const results = await aiService.processBatch(chunk, activeRules, { disableAnomalyDetection });
 
       for (const res of results) {
         const { id, ai_categories, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;

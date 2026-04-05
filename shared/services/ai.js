@@ -19,7 +19,47 @@ export class AIService {
     ];
   }
 
-  async getModel() {
+  async getModel(excludeAnomaly = false) {
+    const properties = {
+      id: { type: SchemaType.STRING },
+      ai_categories: {
+        type: SchemaType.ARRAY,
+        items: { type: SchemaType.STRING }
+      },
+      rule_violations: {
+        type: SchemaType.ARRAY,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            rule_id: { type: SchemaType.STRING },
+            reason: { type: SchemaType.STRING }
+          },
+          required: ['rule_id', 'reason']
+        }
+      },
+      proposed_rules: {
+        type: SchemaType.ARRAY,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            name: { type: SchemaType.STRING },
+            description: { type: SchemaType.STRING },
+            expected_amount: { type: SchemaType.NUMBER },
+            amount_margin: { type: SchemaType.NUMBER }
+          },
+          required: ['name', 'description']
+        }
+      }
+    };
+
+    const required = ['id', 'ai_categories'];
+
+    if (!excludeAnomaly) {
+      properties.is_anomalous = { type: SchemaType.BOOLEAN };
+      properties.anomaly_reason = { type: SchemaType.STRING };
+      required.push('is_anomalous');
+    }
+
     return this.genAI.getGenerativeModel({
       model: this.modelName,
       generationConfig: {
@@ -28,33 +68,8 @@ export class AIService {
           type: SchemaType.ARRAY,
           items: {
             type: SchemaType.OBJECT,
-            properties: {
-              id: { type: SchemaType.STRING },
-              ai_categories: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING }
-              },
-              is_anomalous: { type: SchemaType.BOOLEAN },
-              anomaly_reason: { type: SchemaType.STRING },
-              rule_violations: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING }
-              },
-              proposed_rules: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    name: { type: SchemaType.STRING },
-                    description: { type: SchemaType.STRING },
-                    expected_amount: { type: SchemaType.NUMBER },
-                    amount_margin: { type: SchemaType.NUMBER }
-                  },
-                  required: ['name', 'description']
-                }
-              }
-            },
-            required: ['id', 'ai_categories', 'is_anomalous']
+            properties,
+            required
           }
         }
       },
@@ -80,16 +95,25 @@ export class AIService {
     return result.rows;
   }
 
-  async processBatch(transactions, activeRules = []) {
-    const historicalContext = await this.getHistoricalContext();
-    const model = await this.getModel();
+  async processBatch(transactions, activeRules = [], options = {}) {
+    const historicalContext = options.disableAnomalyDetection ? [] : await this.getHistoricalContext();
+    const model = await this.getModel(options.disableAnomalyDetection);
+
+    const taskList = options.disableAnomalyDetection
+      ? `1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
+      2. 'rule_violations': Array of objects for any active rules that were violated.
+      3. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on the current transaction.`
+      : `1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
+      2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
+      3. 'anomaly_reason': String (optional), explanation of the anomaly.
+      4. 'rule_violations': Array of objects for any active rules that were violated.
+      5. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on historicalContext and current transaction.`;
 
     const prompt = `
       You are a financial analysis assistant. 
       Analyze the following batch of recent transactions and return a JSON array.
       
-      ### Historical Context (Normal Behavior):
-      ${JSON.stringify(historicalContext)}
+      ${options.disableAnomalyDetection ? '' : `### Historical Context (Normal Behavior):\n${JSON.stringify(historicalContext)}`}
 
       ### Active Rules to Check (Patterns can be regex or natural language descriptions):
       ${JSON.stringify(activeRules)}
@@ -106,21 +130,23 @@ export class AIService {
 
       ### Task:
       For each transaction, provide:
-      1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
-      2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
-      3. 'anomaly_reason': String (optional), explanation of the anomaly.
-      4. 'rule_violations': Array of IDs of any active rules that were violated. 
+      ${taskList}
+
+         Each rule_violations object MUST have:
+         - 'rule_id': The ID of the violated rule.
+         - 'reason': A brief, clear explanation of WHY the rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
+         
+         If NO rules are violated, return an empty array []. NEVER return ["none"] or similar placeholders.
+         
          A rule is violated if:
-         - Its pattern matches the transaction (regex or string match).
+         - The transaction doesnt comply to the given description.
          - IF it has an 'expected_amount' and 'amount_margin', the transaction amount is NOT within [expected_amount - amount_margin, expected_amount + amount_margin].
-      5. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on historicalContext and current transaction. 
-         Return an array of objects: { 
-           "name": "Natural language rule name (e.g. Health Insurance)", 
-           "description": "Natural language description of the rule (e.g. All transactions to AXA for health insurance)",
-           "expected_amount": 123.45, (the recurring amount)
-           "amount_margin": 5.00 (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
-         }.
-         DO NOT propose rules for one-off transactions. Focus on counterparties with a history of frequency > 1 in historicalContext.
+         
+         Each proposed_rules object MUST have:
+         - 'name': Natural language rule name (e.g. Health Insurance), 
+         - 'description': Natural language description of the rule (e.g. All transactions to AXA for health insurance),
+         - 'expected_amount': 123.45, (the recurring amount)
+         - 'amount_margin': 5.00 (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
 
       Return ONLY a JSON array of objects.
     `;
@@ -130,7 +156,13 @@ export class AIService {
     const text = response.text();
     
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      // Ensure all required fields exist even if excluded from prompt
+      return parsed.map(item => ({
+        ...item,
+        is_anomalous: options.disableAnomalyDetection ? false : (item.is_anomalous || false),
+        anomaly_reason: options.disableAnomalyDetection ? '' : (item.anomaly_reason || '')
+      }));
     } catch (err) {
       console.error('Failed to parse AI response:', text);
       throw new Error('AI response was not valid JSON');
