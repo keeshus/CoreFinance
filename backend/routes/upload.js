@@ -1,8 +1,9 @@
 import express from 'express';
 import multer from 'multer';
-import { insertTransaction, upsertDailyBalance, pool, createJob } from '../db.js';
+import { insertTransaction, upsertDailyBalance, pool, createJob, getSettings, getRules } from '../db.js';
 import { parseBankCsv, parseBalanceCsv } from '../parser.js';
-import { aiQueue } from '../queue.js';
+import { aiQueue, flowProducer } from '../queue.js';
+import { AIService } from '../../shared/services/ai.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -305,15 +306,57 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       
       let jobId = null;
       if (rowIds.length > 0 && accountSettings?.ai_enabled) {
-        // Trigger AI analysis in the background via BullMQ
-        const jobPayload = { transactionIds: rowIds, disableAnomalyDetection };
-        jobId = await createJob('ai_categorization', jobPayload);
-        
-        await aiQueue.add('analyze', {
-          transactions: normalizedRows.filter(r => rowIds.includes(r.id)),
-          jobId: jobId,
-          disableAnomalyDetection
-        });
+        // Fetch AI config, rules and historical context once in the backend
+        const config = await getSettings('ai_config');
+        if (config?.enabled) {
+          const rules = await getRules();
+          const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
+          const aiService = new AIService(config);
+          const historicalContext = disableAnomalyDetection ? [] : await aiService.getHistoricalContext();
+
+          const transactionsToProcess = normalizedRows.filter(r => rowIds.includes(r.id));
+          
+          // Split into chunks of 50 for efficiency
+          const chunkSize = 50;
+          const chunks = [];
+          for (let i = 0; i < transactionsToProcess.length; i += chunkSize) {
+            chunks.push(transactionsToProcess.slice(i, i + chunkSize));
+          }
+
+          // Create the main background job record
+          jobId = await createJob('ai_categorization', { transactionIds: rowIds, disableAnomalyDetection });
+
+          // Create a Flow: Parent (finalizer) and Children (chunks)
+          await flowProducer.add({
+            name: 'finalize',
+            queueName: 'ai-processing',
+            data: { jobId, totalChunks: chunks.length },
+            opts: {
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 1000 }
+            },
+            children: chunks.map((chunk, index) => ({
+              name: 'analyze-chunk',
+              queueName: 'ai-processing',
+              data: {
+                transactions: chunk,
+                jobId,
+                chunkNum: index + 1,
+                totalChunks: chunks.length,
+                disableAnomalyDetection,
+                historicalContext,
+                activeRules,
+                config
+              },
+              opts: {
+                attempts: 5,
+                backoff: { type: 'exponential', delay: 2000 }
+              }
+            }))
+          });
+          
+          console.log(`[Backend] Created BullMQ Flow for job ${jobId} with ${chunks.length} chunks`);
+        }
       }
 
       res.json({

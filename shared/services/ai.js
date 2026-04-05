@@ -77,26 +77,33 @@ export class AIService {
   }
 
   async getHistoricalContext() {
-    const result = await pool.query(`
-      SELECT 
-        counterparty, 
-        COUNT(*) as frequency, 
-        AVG(amount) as avg_amount,
-        MIN(amount) as min_amount,
-        MAX(amount) as max_amount
-      FROM transactions
-      WHERE date > CURRENT_DATE - INTERVAL '1 year'
-      GROUP BY counterparty
-      HAVING COUNT(*) > 1
-      ORDER BY frequency DESC
-      LIMIT 100
-    `);
-
-    return result.rows;
+    console.log('[AIService] Fetching historical context...');
+    const start = Date.now();
+    try {
+      const result = await pool.query(`
+        SELECT 
+          counterparty, 
+          COUNT(*) as frequency, 
+          AVG(amount) as avg_amount,
+          MIN(amount) as min_amount,
+          MAX(amount) as max_amount
+        FROM transactions
+        WHERE date > CURRENT_DATE - INTERVAL '1 year'
+        GROUP BY counterparty
+        HAVING COUNT(*) > 1
+        ORDER BY frequency DESC
+        LIMIT 100
+      `);
+      console.log(`[AIService] Historical context fetched in ${Date.now() - start}ms. Found ${result.rows.length} records.`);
+      return result.rows;
+    } catch (err) {
+      console.error('[AIService] Failed to fetch historical context:', err);
+      return [];
+    }
   }
 
   async processBatch(transactions, activeRules = [], options = {}) {
-    const historicalContext = options.disableAnomalyDetection ? [] : await this.getHistoricalContext();
+    const historicalContext = options.historicalContext || [];
     const model = await this.getModel(options.disableAnomalyDetection);
 
     const taskList = options.disableAnomalyDetection
@@ -151,24 +158,41 @@ export class AIService {
       Return ONLY a JSON array of objects.
     `;
 
-    console.log(`[AIService] Sending request to Gemini (${this.modelName})...`);
-    const result = await model.generateContent(prompt);
-    console.log(`[AIService] Received response from Gemini`);
-    const response = await result.response;
-    const text = response.text();
-    console.log(`[AIService] Response text length: ${text.length}`);
+    console.log(`[AIService] Sending request to Gemini (${this.modelName}). Prompt length: ${prompt.length}`);
+    const startCall = Date.now();
     
+    // 60-second timeout for the AI call
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('AI call timed out after 60s')), 60000)
+    );
+
     try {
-      const parsed = JSON.parse(text);
-      // Ensure all required fields exist even if excluded from prompt
-      return parsed.map(item => ({
-        ...item,
-        is_anomalous: options.disableAnomalyDetection ? false : (item.is_anomalous || false),
-        anomaly_reason: options.disableAnomalyDetection ? '' : (item.anomaly_reason || '')
-      }));
+      const result = await Promise.race([
+        model.generateContent(prompt),
+        timeoutPromise
+      ]);
+      
+      console.log(`[AIService] Received response from Gemini after ${(Date.now() - startCall) / 1000}s`);
+      const response = await result.response;
+      const text = response.text();
+      console.log(`[AIService] Response text extracted. Length: ${text.length}`);
+      
+      try {
+        const parsed = JSON.parse(text);
+        console.log(`[AIService] Parsed JSON successfully: ${parsed.length} items`);
+        // Ensure all required fields exist even if excluded from prompt
+        return parsed.map(item => ({
+          ...item,
+          is_anomalous: options.disableAnomalyDetection ? false : (item.is_anomalous || false),
+          anomaly_reason: options.disableAnomalyDetection ? '' : (item.anomaly_reason || '')
+        }));
+      } catch (err) {
+        console.error('[AIService] Failed to parse AI response:', text);
+        throw new Error('AI response was not valid JSON');
+      }
     } catch (err) {
-      console.error('Failed to parse AI response:', text);
-      throw new Error('AI response was not valid JSON');
+      console.error(`[AIService] AI Call failed or timed out after ${(Date.now() - startCall) / 1000}s:`, err.message);
+      throw err;
     }
   }
 

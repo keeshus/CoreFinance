@@ -1,4 +1,4 @@
-import { Queue } from 'bullmq';
+import { Queue, FlowProducer } from 'bullmq';
 import IORedis from 'ioredis';
 
 const connection = new IORedis(process.env.VALKEY_URL || 'valkey://localhost:6379', {
@@ -14,3 +14,4 @@ connection.on('error', (err) => {
 });
 
 export const aiQueue = new Queue('ai-processing', { connection });
+export const flowProducer = new FlowProducer({ connection });
