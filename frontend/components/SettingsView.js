@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw
+  CreditCard, Edit2, Check, X, Sparkles, Save, Trash2, Plus, RefreshCw,
+  CheckCircle, AlertCircle
 } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 
@@ -21,6 +22,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
   const [loadingModels, setLoadingModels] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichmentResult, setEnrichmentResult] = useState(null);
+  const [notification, setNotification] = useState(null);
 
   useEffect(() => {
     if (aiConfig) {
@@ -31,6 +33,11 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
       }
     }
   }, [aiConfig]);
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   const fetchModels = async () => {
     if (!localAIConfig.apiKey) return;
@@ -44,12 +51,14 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
       if (res.ok) {
         const models = await res.json();
         setAvailableModels(models);
-        if (models.length > 0 && !models.find(m => m.name === localAIConfig.model)) {
-          // If current model not in list, but we have models, maybe don't auto-switch but show they are available
-        }
+        showNotification(`Successfully fetched ${models.length} models`);
+      } else {
+        const errData = await res.json();
+        showNotification(errData.error || 'Failed to fetch models', 'error');
       }
     } catch (err) {
       console.error('Failed to fetch models:', err);
+      showNotification('Failed to fetch models', 'error');
     } finally {
       setLoadingModels(false);
     }
@@ -65,16 +74,72 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
       });
       const data = await res.json();
       setEnrichmentResult(data);
+      if (res.ok) {
+        showNotification(data.message || 'AI enrichment job started');
+      } else {
+        showNotification(data.error || 'Failed to trigger AI enrichment', 'error');
+      }
     } catch (err) {
       console.error('Failed to trigger AI enrichment:', err);
       setEnrichmentResult({ error: 'Failed to trigger AI enrichment' });
+      showNotification('Failed to trigger AI enrichment', 'error');
     } finally {
       setIsEnriching(false);
     }
   };
 
+  const handleSaveAIConfig = async () => {
+    try {
+      await onSaveAIConfig(localAIConfig);
+      showNotification('AI Configuration saved successfully');
+    } catch (err) {
+      showNotification('Failed to save AI Configuration', 'error');
+    }
+  };
+
+  const handleSaveAccount = async (id, name, ai) => {
+    try {
+      await onSaveAccountName(id, name, ai);
+      showNotification(`Account ${name} updated successfully`);
+    } catch (err) {
+      showNotification('Failed to update account', 'error');
+    }
+  };
+
+  const handleDeleteAccountConfirm = async (account) => {
+    try {
+      await onDeleteAccount(account);
+      showNotification('Account deleted successfully');
+    } catch (err) {
+      // onDeleteAccount might have its own confirm and return early, 
+      // but if it actually deletes and fails, we show this.
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', position: 'relative' }}>
+      {/* Toast Notification */}
+      {notification && (
+        <div style={{ 
+          position: 'fixed', top: '20px', right: '20px', zIndex: 1000,
+          padding: '12px 24px', borderRadius: '12px', background: notification.type === 'error' ? '#fee2e2' : '#f0fdf4',
+          border: `1px solid ${notification.type === 'error' ? '#fecaca' : '#bbf7d0'}`,
+          color: notification.type === 'error' ? '#991b1b' : '#166534',
+          fontWeight: '600', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          animation: 'slideIn 0.3s ease-out'
+        }}>
+          {notification.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
+          {notification.message}
+          <style jsx>{`
+            @keyframes slideIn {
+              from { transform: translateX(100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
+
       {/* AI Config Section */}
       <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
          <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -135,7 +200,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
             </div>
 
             <button 
-              onClick={() => onSaveAIConfig(localAIConfig)}
+              onClick={handleSaveAIConfig}
               style={{ 
                 alignSelf: 'flex-start', padding: '10px 20px', background: '#8b5cf6', color: '#fff', 
                 border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', 
@@ -265,7 +330,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button 
                     onClick={() => {
-                      onSaveAccountName(addAccountData.id, addAccountData.name, addAccountData.ai);
+                      handleSaveAccount(addAccountData.id, addAccountData.name, addAccountData.ai);
                       setIsAddingAccount(false);
                       setAddAccountData({ id: '', name: '', ai: false });
                     }}
@@ -311,7 +376,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                           style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f6', outline: 'none' }}
                         />
                         <button onClick={() => {
-                           onSaveAccountName(acc.account, newAccountName, acc.ai_enabled);
+                           handleSaveAccount(acc.account, newAccountName, acc.ai_enabled);
                            setEditingAccount(null);
                         }} style={{ color: '#22c55e', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
                         <button onClick={() => setEditingAccount(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
@@ -323,7 +388,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                   <div style={{ display: 'flex', gap: '10px' }}>
                    <button 
                      onClick={() => {
-                       onSaveAccountName(acc.account, acc.display_name, !acc.ai_enabled);
+                       handleSaveAccount(acc.account, acc.display_name, !acc.ai_enabled);
                      }}
                      style={{ 
                        padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
@@ -343,7 +408,7 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                        <Edit2 size={14} />
                      </button>
                      <button 
-                       onClick={() => onDeleteAccount(acc.account)}
+                       onClick={() => handleDeleteAccountConfirm(acc.account)}
                        style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
                      >
                        <Trash2 size={14} />

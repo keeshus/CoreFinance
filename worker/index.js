@@ -56,13 +56,24 @@ const pingBackend = async () => {
 setInterval(pingBackend, 60000);
 pingBackend(); // Initial ping
 
-console.log('Worker starting...');
+// Event loop lag monitor
+let lastCheck = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  const lag = now - lastCheck - 1000;
+  if (lag > 100) {
+    console.warn(`[Worker] Event loop lag detected: ${lag}ms`);
+  }
+  lastCheck = now;
+}, 1000);
 
 const worker = new Worker('ai-processing', async (job) => {
   const { transactions, jobId, disableAnomalyDetection } = job.data;
   
   try {
     const config = await getSettings('ai_config');
+    console.log(`[Worker] Job ${jobId} started. AI config enabled: ${config?.enabled}`);
+    
     if (!config || !config.enabled) {
       await updateJob(jobId, { status: 'completed', progress: 100, log: 'AI processing is disabled.' });
       return;
@@ -72,8 +83,10 @@ const worker = new Worker('ai-processing', async (job) => {
 
     const accountInfo = await getAccountNames();
     const enabledAccounts = accountInfo.filter(a => a.ai_enabled).map(a => a.account);
+    console.log(`[Worker] Enabled accounts: ${enabledAccounts.join(', ')}`);
     
     const filteredTransactions = transactions.filter(t => enabledAccounts.includes(t.account));
+    console.log(`[Worker] Transactions to process: ${filteredTransactions.length} (total received: ${transactions.length})`);
     
     if (filteredTransactions.length === 0) {
       await updateJob(jobId, { status: 'completed', progress: 100, log: 'No transactions found for AI-enabled accounts.' });
@@ -84,7 +97,7 @@ const worker = new Worker('ai-processing', async (job) => {
 
     const rules = await getRules();
     const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
-    rules.filter(r => r.is_proposed);
+    console.log(`[Worker] Loaded ${activeRules.length} active rules`);
     const aiService = new AIService(config);
     
     const chunkSize = 10;
@@ -94,12 +107,20 @@ const worker = new Worker('ai-processing', async (job) => {
       const chunk = filteredTransactions.slice(i, i + chunkSize);
       const chunkNum = Math.floor(i / chunkSize) + 1;
       
+      const startTime = Date.now();
+      console.log(`[Worker] Starting chunk ${chunkNum}/${totalChunks} (${chunk.length} transactions)`);
+
       await updateJob(jobId, { 
         progress: 20 + Math.floor((chunkNum / totalChunks) * 70), 
         log: `Analyzing chunk ${chunkNum} of ${totalChunks}...` 
       });
 
+      // Update BullMQ job progress as a heartbeat
+      await job.updateProgress(Math.floor((chunkNum / totalChunks) * 100));
+
       const results = await aiService.processBatch(chunk, activeRules, { disableAnomalyDetection });
+      const duration = (Date.now() - startTime) / 1000;
+      console.log(`[Worker] Chunk ${chunkNum} finished in ${duration.toFixed(2)}s`);
 
       for (const res of results) {
         const { id, ai_categories, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;
@@ -111,7 +132,6 @@ const worker = new Worker('ai-processing', async (job) => {
 
         if (proposed_rules && proposed_rules.length > 0) {
           for (const ruleObj of proposed_rules) {
-            // Simple deduplication: Check if a rule with this name or similar pattern already exists
             const isDuplicate = rules.some(r => 
               r.name.toLowerCase() === ruleObj.name.toLowerCase() || 
               r.pattern.toLowerCase() === ruleObj.description.toLowerCase()
@@ -119,7 +139,6 @@ const worker = new Worker('ai-processing', async (job) => {
 
             if (!isDuplicate) {
               await addRule(ruleObj.name, ruleObj.description, true, ruleObj.expected_amount, ruleObj.amount_margin);
-              // Add to local rules array to prevent duplicates within the same batch processing
               rules.push({ 
                 name: ruleObj.name, 
                 pattern: ruleObj.description, 
@@ -135,11 +154,14 @@ const worker = new Worker('ai-processing', async (job) => {
 
     await updateJob(jobId, { status: 'completed', progress: 100, log: 'AI categorization completed successfully by worker.' });
   } catch (err) {
-    console.error('Worker job processing error:', err);
+    console.error(`[Worker] Job ${jobId} failed:`, err);
     await updateJob(jobId, { status: 'failed', error: err.message, log: `Error: ${err.message}` });
-    throw err; // Allow BullMQ to handle retry if configured
+    throw err;
   }
-}, { connection });
+}, { connection, lockDuration: 120000 });
+
+console.log(`Worker starting (ID: ${workerId})...`);
+console.log(`BullMQ Worker configuration: lockDuration=${worker.opts.lockDuration}ms`);
 
 worker.on('completed', (job) => {
   console.log(`Job ${job.id} completed!`);

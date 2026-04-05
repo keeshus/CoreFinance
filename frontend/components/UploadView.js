@@ -168,7 +168,17 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                 <span style={{ fontWeight: 800, fontSize: '1.1em' }}>AI Categorization</span>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                   <span style={{ fontWeight: 800, fontSize: '1.1em' }}>AI Categorization</span>
+                   {currentJob.payload?.disableAnomalyDetection && (
+                     <span style={{ 
+                       background: '#eff6ff', color: '#3b82f6', padding: '2px 8px', borderRadius: '8px', 
+                       fontSize: '0.7em', fontWeight: '800', border: '1px solid #dbeafe'
+                     }}>
+                       BASELINE
+                     </span>
+                   )}
+                 </div>
                  <span style={{ 
                    padding: '4px 12px', borderRadius: '12px', fontSize: '0.8em', fontWeight: 'bold',
                    background: currentJob.status === 'completed' ? '#dcfce7' : currentJob.status === 'failed' ? '#fee2e2' : '#fef9c3',

@@ -181,9 +181,14 @@ export default function Home() {
       });
       if (res.ok) {
         refreshData();
+        return true;
+      } else {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update account');
       }
     } catch (err) {
       console.error('Error updating account name:', err);
+      throw err;
     }
   };
 
@@ -195,9 +200,14 @@ export default function Home() {
       });
       if (res.ok) {
         refreshData();
+        return true;
+      } else {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete account');
       }
     } catch (err) {
       console.error('Error deleting account:', err);
+      throw err;
     }
   };
 
@@ -279,12 +289,17 @@ export default function Home() {
           onSaveAccountName={handleSaveAccountName} 
           aiConfig={aiConfig}
           onSaveAIConfig={async (config) => {
-            await fetch('/api/settings/ai_config', {
+            const res = await fetch('/api/settings/ai_config', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(config)
             });
-            fetchSettings();
+            if (res.ok) {
+              fetchSettings();
+            } else {
+              const data = await res.json();
+              throw new Error(data.error || 'Failed to update AI configuration');
+            }
           }}
           onDeleteAccount={handleDeleteAccount}
         />

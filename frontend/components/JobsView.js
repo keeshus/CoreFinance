@@ -4,6 +4,7 @@ import { Activity, Clock, CheckCircle, AlertCircle, Loader2, ChevronDown, Chevro
 export default function JobsView({ jobs, workers = [], onRefresh }) {
   const [expandedJob, setExpandedJob] = React.useState(null);
   const [retryingId, setRetryingId] = React.useState(null);
+  const [showCompleted, setShowCompleted] = React.useState(false);
 
   const handleRetry = async (e, id) => {
     e.stopPropagation();
@@ -60,9 +61,19 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
            {getStatusIcon(job.status)}
-           <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>{job.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
-              <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>ID: #{job.id} • {new Date(job.created_at).toLocaleString()}</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                 <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>{job.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                 {job.payload?.disableAnomalyDetection && (
+                   <span style={{ 
+                     background: '#eff6ff', color: '#3b82f6', padding: '2px 8px', borderRadius: '8px', 
+                     fontSize: '0.7em', fontWeight: '800', border: '1px solid #dbeafe'
+                   }}>
+                     BASELINE
+                   </span>
+                 )}
+               </div>
+               <span style={{ fontSize: '0.8em', color: '#94a3b8' }}>ID: #{job.id} • {new Date(job.created_at).toLocaleString()}</span>
               {job.worker_id && (
                 <span style={{ fontSize: '0.7em', color: '#6366f1', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                   <Server size={10} /> {job.worker_id}
@@ -83,19 +94,17 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
                  <div style={{ height: '100%', background: '#8b5cf6', width: `${job.progress}%` }} />
               </div>
            </div>
-           <div style={{ display: 'flex', gap: '5px' }}>
-              {job.status === 'failed' && (
-                <button 
-                  onClick={(e) => handleRetry(e, job.id)}
-                  disabled={retryingId === job.id}
-                  title="Retry Job"
-                  style={{ background: '#f5f3ff', border: 'none', padding: '8px', borderRadius: '10px', color: '#7c3aed', cursor: retryingId === job.id ? 'wait' : 'pointer' }}
-                >
-                  {retryingId === job.id ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
-                </button>
-              )}
-              <button 
-                onClick={(e) => handleDelete(e, job.id)}
+            <div style={{ display: 'flex', gap: '5px' }}>
+               <button 
+                 onClick={(e) => handleRetry(e, job.id)}
+                 disabled={retryingId === job.id}
+                 title={job.status === 'processing' ? "Requeue/Force Retry (Use for stale jobs)" : "Retry/Requeue Job"}
+                 style={{ background: '#f5f3ff', border: 'none', padding: '8px', borderRadius: '10px', color: '#7c3aed', cursor: retryingId === job.id ? 'wait' : 'pointer' }}
+               >
+                 {retryingId === job.id ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+               </button>
+               <button 
+onClick={(e) => handleDelete(e, job.id)}
                 title="Delete Job"
                 style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
               >
@@ -131,8 +140,12 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
     </div>
   );
 
+  // Filter jobs based on toggle
+  const filteredJobs = showCompleted ? jobs : jobs.filter(j => j.status !== 'completed');
+
   // Group jobs by worker
-  const unassignedJobs = jobs.filter(j => !j.worker_id);
+  const activeWorkerIds = workers.map(w => w.id);
+  const unassignedJobs = filteredJobs.filter(j => !j.worker_id || !activeWorkerIds.includes(j.worker_id));
   
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
@@ -140,7 +153,16 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
         <h2 style={{ fontSize: '1.5em', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Activity size={24} color="#3b82f6" /> Multi-Worker Job Monitor
         </h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85em', fontWeight: 'bold', cursor: 'pointer', color: '#64748b' }}>
+            <input 
+              type="checkbox" 
+              checked={showCompleted} 
+              onChange={(e) => setShowCompleted(e.target.checked)} 
+              style={{ width: '16px', height: '16px' }}
+            />
+            Show Completed Jobs
+          </label>
           <button 
             onClick={onRefresh}
             style={{ padding: '8px 16px', background: '#f1f5f9', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85em' }}
@@ -170,12 +192,12 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
             </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100px' }}>
-              {jobs.filter(j => j.worker_id === worker.id).length === 0 ? (
+              {filteredJobs.filter(j => j.worker_id === worker.id).length === 0 ? (
                 <div style={{ padding: '20px', textAlign: 'center', background: '#fff', borderRadius: '16px', border: '1px dashed #cbd5e1', color: '#94a3b8', fontSize: '0.85em' }}>
                   No active jobs on this worker
                 </div>
               ) : (
-                jobs.filter(j => j.worker_id === worker.id).map(job => <JobItem key={job.id} job={job} />)
+                filteredJobs.filter(j => j.worker_id === worker.id).map(job => <JobItem key={job.id} job={job} />)
               )}
             </div>
           </div>
@@ -202,7 +224,7 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
         )}
       </div>
 
-      {jobs.length === 0 && workers.length === 0 && (
+      {filteredJobs.length === 0 && workers.length === 0 && (
         <div style={{ padding: '40px', textAlign: 'center', background: '#fff', borderRadius: '24px', border: '1px solid #e2e8f0', color: '#64748b' }}>
           No background jobs or active workers found.
         </div>

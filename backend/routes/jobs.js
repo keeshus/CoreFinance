@@ -44,8 +44,9 @@ router.post('/:id/retry', async (req, res) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
+    // Optional: Log if we're retrying a job that was already processing
     if (job.status === 'processing') {
-      return res.status(400).json({ error: 'Job is already processing' });
+      console.warn(`[Jobs] Retrying a job that is already in processing state: ${job.id}`);
     }
 
     const transactionIds = job.payload?.transactionIds;
@@ -58,6 +59,8 @@ router.post('/:id/retry', async (req, res) => {
       return res.status(400).json({ error: 'No transactions found for this job' });
     }
 
+    const disableAnomalyDetection = job.payload?.disableAnomalyDetection || false;
+
     // Reset job state
     await updateJob(job.id, { 
       status: 'pending', 
@@ -69,7 +72,8 @@ router.post('/:id/retry', async (req, res) => {
     // Start background process via BullMQ
     await aiQueue.add('analyze', {
       transactions: transactions,
-      jobId: job.id
+      jobId: job.id,
+      disableAnomalyDetection
     });
 
     res.json({ message: 'Job retry started', job_id: job.id });

@@ -151,9 +151,12 @@ export class AIService {
       Return ONLY a JSON array of objects.
     `;
 
+    console.log(`[AIService] Sending request to Gemini (${this.modelName})...`);
     const result = await model.generateContent(prompt);
+    console.log(`[AIService] Received response from Gemini`);
     const response = await result.response;
     const text = response.text();
+    console.log(`[AIService] Response text length: ${text.length}`);
     
     try {
       const parsed = JSON.parse(text);

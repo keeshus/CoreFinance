@@ -156,6 +156,8 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     return res.status(400).json({ error: 'Transaction file is required' });
   }
   const accountId = req.body.accountId;
+  const disableAnomalyDetection = req.body.disableAnomaly === 'true';
+
   if (!accountId) {
     return res.status(400).json({ error: 'Target account ID is required' });
   }
