@@ -241,33 +241,32 @@ export default function Home() {
         />
       )}
 
-      {activeTab === 'rules' && (
+            {activeTab === 'rules' && (
         <RulesView 
           rules={rules}
-          onAddRule={async (name, pattern) => {
+          onAddRule={async (name, pattern, expected_amount, amount_margin) => {
             await fetch('/api/rules', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, pattern })
+              body: JSON.stringify({ name, pattern, expected_amount, amount_margin })
             });
             fetchRules();
           }}
-          onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern) => {
+          onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern, expected_amount, amount_margin) => {
             await fetch(`/api/rules/${id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_active, is_proposed, name, pattern })
+              body: JSON.stringify({ is_active, is_proposed, name, pattern, expected_amount, amount_margin })
             });
             fetchRules();
           }}
           onDeleteRule={async (id) => {
-            await fetch(`/api/rules/${id}`, {
-              method: 'DELETE'
-            });
+            await fetch(`/api/rules/${id}`, { method: 'DELETE' });
             fetchRules();
           }}
         />
       )}
+
 
       {activeTab === 'jobs' && (
         <JobsView jobs={jobs} workers={workers} onRefresh={() => { fetchJobs(); fetchWorkers(); }} />

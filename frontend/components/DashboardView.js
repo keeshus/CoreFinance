@@ -12,6 +12,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const [sortField, setSortField] = useState('date');
   const [sortOrder, setSortOrder] = useState('desc');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
+  const [deviationsOnly, setDeviationsOnly] = useState(false);
   
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -50,14 +51,15 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
       startDate: dateFilter.start,
       endDate: dateFilter.end,
       sortField,
-      sortOrder
+      sortOrder,
+      deviationsOnly
     });
-  }, [currentPage, pageSize, selectedAccount, searchQuery, dateFilter, sortField, sortOrder, fetchTransactions]);
+  }, [currentPage, pageSize, selectedAccount, searchQuery, dateFilter, sortField, sortOrder, deviationsOnly, fetchTransactions]);
 
   // Reset page when filters change (but not when page itself changes)
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedAccount, searchQuery, dateFilter, sortField, sortOrder, pageSize]);
+  }, [selectedAccount, searchQuery, dateFilter, sortField, sortOrder, pageSize, deviationsOnly]);
 
   const filteredTrend = useMemo(() => {
     if (!trend.length) return [];
@@ -591,12 +593,29 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                 placeholder="Search transactions..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ 
+                style={{
                   flex: 1, padding: '10px 10px 10px 12px', border: 'none',
                   fontSize: '0.85em', outline: 'none', color: '#1e293b', background: 'transparent'
                 }}
               />
             </div>
+
+            <button
+              onClick={() => setDeviationsOnly(!deviationsOnly)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '10px 16px', borderRadius: '12px',
+                border: '1px solid',
+                borderColor: deviationsOnly ? '#f59e0b' : '#e2e8f0',
+                background: deviationsOnly ? '#fffbeb' : '#fff',
+                color: deviationsOnly ? '#92400e' : '#64748b',
+                fontSize: '0.85em', fontWeight: 'bold', cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <AlertCircle size={16} color={deviationsOnly ? '#f59e0b' : '#94a3b8'} />
+              Deviations Only
+            </button>
             
             <div className="date-filters" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', flexWrap: 'wrap' }}>
               <DateFilter 

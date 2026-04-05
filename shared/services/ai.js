@@ -46,7 +46,9 @@ export class AIService {
                   type: SchemaType.OBJECT,
                   properties: {
                     name: { type: SchemaType.STRING },
-                    description: { type: SchemaType.STRING }
+                    description: { type: SchemaType.STRING },
+                    expected_amount: { type: SchemaType.NUMBER },
+                    amount_margin: { type: SchemaType.NUMBER }
                   },
                   required: ['name', 'description']
                 }
@@ -107,9 +109,17 @@ export class AIService {
       1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
       2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
       3. 'anomaly_reason': String (optional), explanation of the anomaly.
-      4. 'rule_violations': Array of IDs of any active rules that were violated.
+      4. 'rule_violations': Array of IDs of any active rules that were violated. 
+         A rule is violated if:
+         - Its pattern matches the transaction (regex or string match).
+         - IF it has an 'expected_amount' and 'amount_margin', the transaction amount is NOT within [expected_amount - amount_margin, expected_amount + amount_margin].
       5. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on historicalContext and current transaction. 
-         Return an array of objects: { "name": "Natural language rule name (e.g. Health Insurance)", "description": "Natural language description of the rule (e.g. All transactions to AXA for health insurance)" }.
+         Return an array of objects: { 
+           "name": "Natural language rule name (e.g. Health Insurance)", 
+           "description": "Natural language description of the rule (e.g. All transactions to AXA for health insurance)",
+           "expected_amount": 123.45, (the recurring amount)
+           "amount_margin": 5.00 (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
+         }.
          DO NOT propose rules for one-off transactions. Focus on counterparties with a history of frequency > 1 in historicalContext.
 
       Return ONLY a JSON array of objects.

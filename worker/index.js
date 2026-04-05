@@ -119,9 +119,15 @@ const worker = new Worker('ai-processing', async (job) => {
             );
 
             if (!isDuplicate) {
-              await addRule(ruleObj.name, ruleObj.description, true);
+              await addRule(ruleObj.name, ruleObj.description, true, ruleObj.expected_amount, ruleObj.amount_margin);
               // Add to local rules array to prevent duplicates within the same batch processing
-              rules.push({ name: ruleObj.name, pattern: ruleObj.description, is_proposed: true });
+              rules.push({ 
+                name: ruleObj.name, 
+                pattern: ruleObj.description, 
+                is_proposed: true,
+                expected_amount: ruleObj.expected_amount,
+                amount_margin: ruleObj.amount_margin
+              });
             }
           }
         }

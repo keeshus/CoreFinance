@@ -1,5 +1,5 @@
 import express from 'express';
-import { getRules, addRule, updateRuleStatus, deleteRule } from '../db.js';
+import { getRules, addRule, updateRule, deleteRule } from '../db.js';
 
 const router = express.Router();
 
@@ -14,9 +14,9 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, pattern } = req.body;
+  const { name, pattern, expected_amount, amount_margin } = req.body;
   try {
-    await addRule(name, pattern, false);
+    await addRule(name, pattern, false, expected_amount, amount_margin);
     res.json({ message: 'Rule added successfully' });
   } catch (err) {
     console.error(err);
@@ -26,15 +26,17 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, pattern, is_active, is_proposed } = req.body;
+  const { name, pattern, is_active, is_proposed, expected_amount, amount_margin } = req.body;
   try {
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (pattern !== undefined) updates.pattern = pattern;
     if (is_active !== undefined) updates.is_active = is_active;
     if (is_proposed !== undefined) updates.is_proposed = is_proposed;
+    if (expected_amount !== undefined) updates.expected_amount = expected_amount;
+    if (amount_margin !== undefined) updates.amount_margin = amount_margin;
     
-    await updateRuleStatus(id, updates.is_active, updates.is_proposed, updates.name, updates.pattern);
+    await updateRule(id, updates);
     res.json({ message: 'Rule updated successfully' });
   } catch (err) {
     console.error(err);

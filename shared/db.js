@@ -57,9 +57,24 @@ export const initDb = async () => {
         pattern TEXT NOT NULL,
         is_active BOOLEAN DEFAULT true,
         is_proposed BOOLEAN DEFAULT false,
+        expected_amount DECIMAL(12, 2),
+        amount_margin DECIMAL(12, 2),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Check if expected_amount column exists
+    const checkExpectedAmount = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'rules' AND column_name = 'expected_amount'
+    `);
+    
+    if (checkExpectedAmount.rows.length === 0) {
+      console.log('Adding "expected_amount" and "amount_margin" columns to "rules" table');
+      await client.query('ALTER TABLE rules ADD COLUMN expected_amount DECIMAL(12, 2)');
+      await client.query('ALTER TABLE rules ADD COLUMN amount_margin DECIMAL(12, 2)');
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS background_jobs (
@@ -129,7 +144,7 @@ export const initDb = async () => {
 
 export const getTransactions = async (filters = {}) => {
   try {
-    const { page = 1, pageSize = 50, account = 'all', search = '', startDate = '', endDate = '', sortField = 'date', sortOrder = 'desc' } = filters;
+    const { page = 1, pageSize = 50, account = 'all', search = '', startDate = '', endDate = '', sortField = 'date', sortOrder = 'desc', deviationsOnly = false } = filters;
     const offset = (page - 1) * pageSize;
     
     let query = `
@@ -140,6 +155,10 @@ export const getTransactions = async (filters = {}) => {
     `;
     const params = [];
     let paramIdx = 1;
+
+    if (deviationsOnly) {
+      query += ` AND (t.metadata->>'is_anomalous' = 'true' OR jsonb_array_length(t.metadata->'rule_violations') > 0)`;
+    }
 
     if (account !== 'all') {
       query += ` AND t.account = $${paramIdx++}`;
@@ -255,11 +274,11 @@ export const getRules = async () => {
   }
 };
 
-export const addRule = async (name, pattern, isProposed = false) => {
+export const addRule = async (name, pattern, isProposed = false, expectedAmount = null, amountMargin = null) => {
   try {
     const res = await pool.query(
-      'INSERT INTO rules (name, pattern, is_proposed) VALUES ($1, $2, $3) RETURNING *',
-      [name, pattern, isProposed]
+      'INSERT INTO rules (name, pattern, is_proposed, expected_amount, amount_margin) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, pattern, isProposed, expectedAmount, amountMargin]
     );
     return res.rows[0];
   } catch (err) {
@@ -268,9 +287,9 @@ export const addRule = async (name, pattern, isProposed = false) => {
   }
 };
 
-const updateRule = async (id, updates) => {
+export const updateRule = async (id, updates) => {
   try {
-    const { name, pattern, is_active, is_proposed } = updates;
+    const { name, pattern, is_active, is_proposed, expected_amount, amount_margin } = updates;
     
     // If name or pattern are not provided, we should fetch current ones or only update provided fields
     // But based on current usage, we are calling it with { is_active, is_proposed }
@@ -296,6 +315,14 @@ const updateRule = async (id, updates) => {
     if (is_proposed !== undefined) {
       setClauses.push(`is_proposed = $${idx++}`);
       params.push(is_proposed);
+    }
+    if (expected_amount !== undefined) {
+      setClauses.push(`expected_amount = $${idx++}`);
+      params.push(expected_amount);
+    }
+    if (amount_margin !== undefined) {
+      setClauses.push(`amount_margin = $${idx++}`);
+      params.push(amount_margin);
     }
 
     if (setClauses.length === 0) return null;
