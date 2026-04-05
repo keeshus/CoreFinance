@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Plus, Check, X, AlertTriangle, Zap, Edit2, Save } from 'lucide-react';
+import { ShieldCheck, Plus, Check, X, Zap, Edit2, Save } from 'lucide-react';
 
 export default function RulesView({ rules, onAddRule, onUpdateRuleStatus, onDeleteRule }) {
   const [newRuleName, setNewRuleName] = useState('');

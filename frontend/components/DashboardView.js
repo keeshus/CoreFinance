@@ -1,10 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calendar, Search, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, Info, Sparkles, AlertCircle, ShieldCheck } from 'lucide-react';
-import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar, Legend, XAxis as RechartsXAxis, YAxis as RechartsYAxis } from 'recharts';
+import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Cell, BarChart, Bar } from 'recharts';
 import CategoryBadge, { CATEGORY_MAP } from './CategoryBadge';
-
-const COLORS = Object.values(CATEGORY_MAP).map(cat => cat.color);
-
+Object.values(CATEGORY_MAP).map(cat => cat.color);
 export default function DashboardView({ summary, trend, transactions, fetchTransactions, loading }) {
   const [timespan, setTimespan] = useState('30d');
   const [selectedAccount, setSelectedAccount] = useState('all');
@@ -18,8 +16,6 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const [pageSize, setPageSize] = useState(50);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [deselectedCategories, setDeselectedCategories] = useState(['Uncategorized']);
-  const [timeIndex, setTimeIndex] = useState(null);
-
   const TIMESPAN_OPTIONS = [
     { label: 'Last 7 Days', value: '7d' },
     { label: 'Last Month', value: '30d' },
@@ -189,8 +185,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const filteredCategoryData = useMemo(() => {
     return categoryData.filter(cat => !deselectedCategories.includes(cat.name));
   }, [categoryData, deselectedCategories]);
-
-  const categoryTrendData = useMemo(() => {
+  useMemo(() => {
     if (!trend.length) return [];
 
     const now = new Date();
@@ -205,9 +200,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
 
     const dailyData = {};
     const topCategories = categoryData
-      .filter(cat => !deselectedCategories.includes(cat.name))
-      .slice(0, 5)
-      .map(c => c.name);
+        .filter(cat => !deselectedCategories.includes(cat.name))
+        .slice(0, 5)
+        .map(c => c.name);
 
     trend.forEach(item => {
       const itemDate = new Date(item.date);
@@ -233,7 +228,6 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
 
     return Object.values(dailyData).sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [trend, categoryData, deselectedCategories, timespan, selectedAccount]);
-
   const totalCount = transactions.length > 0 ? parseInt(transactions[0].total_count) : 0;
 
   const toggleCategory = (name) => {
@@ -530,7 +524,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
               <Sparkles size={18} color="#7c3aed" /> Spending by Category
             </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '15px' }}>
-              {categoryData.map((cat, index) => {
+              {categoryData.map((cat) => {
                 const isDeselected = deselectedCategories.includes(cat.name);
                 const info = CATEGORY_MAP[cat.name] || CATEGORY_MAP['Uncategorized'];
                 return (

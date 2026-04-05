@@ -84,8 +84,7 @@ const worker = new Worker('ai-processing', async (job) => {
 
     const rules = await getRules();
     const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
-    const existingProposedRules = rules.filter(r => r.is_proposed);
-
+    rules.filter(r => r.is_proposed);
     const aiService = new AIService(config);
     
     const chunkSize = 10;
