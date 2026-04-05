@@ -271,10 +271,39 @@ export const addRule = async (name, pattern, isProposed = false) => {
 const updateRule = async (id, updates) => {
   try {
     const { name, pattern, is_active, is_proposed } = updates;
-    const res = await pool.query(
-      'UPDATE rules SET name = $1, pattern = $2, is_active = $3, is_proposed = $4 WHERE id = $5 RETURNING *',
-      [name, pattern, is_active, is_proposed, id]
-    );
+    
+    // If name or pattern are not provided, we should fetch current ones or only update provided fields
+    // But based on current usage, we are calling it with { is_active, is_proposed }
+    // Let's make it more robust by only updating what is provided
+    
+    let query = 'UPDATE rules SET ';
+    const params = [];
+    const setClauses = [];
+    let idx = 1;
+
+    if (name !== undefined) {
+      setClauses.push(`name = $${idx++}`);
+      params.push(name);
+    }
+    if (pattern !== undefined) {
+      setClauses.push(`pattern = $${idx++}`);
+      params.push(pattern);
+    }
+    if (is_active !== undefined) {
+      setClauses.push(`is_active = $${idx++}`);
+      params.push(is_active);
+    }
+    if (is_proposed !== undefined) {
+      setClauses.push(`is_proposed = $${idx++}`);
+      params.push(is_proposed);
+    }
+
+    if (setClauses.length === 0) return null;
+
+    query += setClauses.join(', ') + ` WHERE id = $${idx} RETURNING *`;
+    params.push(id);
+
+    const res = await pool.query(query, params);
     return res.rows[0];
   } catch (err) {
     console.error(`Error updating rule ${id}:`, err);

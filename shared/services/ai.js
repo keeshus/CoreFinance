@@ -42,7 +42,14 @@ export class AIService {
               },
               proposed_rules: {
                 type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING }
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    name: { type: SchemaType.STRING },
+                    description: { type: SchemaType.STRING }
+                  },
+                  required: ['name', 'description']
+                }
               }
             },
             required: ['id', 'ai_categories', 'is_anomalous']
@@ -82,7 +89,7 @@ export class AIService {
       ### Historical Context (Normal Behavior):
       ${JSON.stringify(historicalContext)}
 
-      ### Active Rules to Check:
+      ### Active Rules to Check (Patterns can be regex or natural language descriptions):
       ${JSON.stringify(activeRules)}
 
       ### Transactions to Analyze:
@@ -101,7 +108,9 @@ export class AIService {
       2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
       3. 'anomaly_reason': String (optional), explanation of the anomaly.
       4. 'rule_violations': Array of IDs of any active rules that were violated.
-      5. 'proposed_rules': Array of strings representing NEW suggested rules (regex-like patterns) based on this transaction's patterns.
+      5. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on historicalContext and current transaction. 
+         Return an array of objects: { "name": "Natural language rule name (e.g. Health Insurance)", "description": "Natural language description of the rule (e.g. All transactions to AXA for health insurance)" }.
+         DO NOT propose rules for one-off transactions. Focus on counterparties with a history of frequency > 1 in historicalContext.
 
       Return ONLY a JSON array of objects.
     `;

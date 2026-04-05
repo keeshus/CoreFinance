@@ -110,8 +110,10 @@ const worker = new Worker('ai-processing', async (job) => {
         );
 
         if (proposed_rules && proposed_rules.length > 0) {
-          for (const ruleText of proposed_rules) {
-            await addRule('Proposed Rule', ruleText, true);
+          for (const ruleObj of proposed_rules) {
+            // New rule format: { name, description }
+            // In DB: rules.name, rules.pattern (which we're using as description/natural language rule)
+            await addRule(ruleObj.name, ruleObj.description, true);
           }
         }
       }
