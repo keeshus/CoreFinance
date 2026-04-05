@@ -84,6 +84,7 @@ const worker = new Worker('ai-processing', async (job) => {
 
     const rules = await getRules();
     const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
+    const existingProposedRules = rules.filter(r => r.is_proposed);
 
     const aiService = new AIService(config);
     
@@ -111,9 +112,17 @@ const worker = new Worker('ai-processing', async (job) => {
 
         if (proposed_rules && proposed_rules.length > 0) {
           for (const ruleObj of proposed_rules) {
-            // New rule format: { name, description }
-            // In DB: rules.name, rules.pattern (which we're using as description/natural language rule)
-            await addRule(ruleObj.name, ruleObj.description, true);
+            // Simple deduplication: Check if a rule with this name or similar pattern already exists
+            const isDuplicate = rules.some(r => 
+              r.name.toLowerCase() === ruleObj.name.toLowerCase() || 
+              r.pattern.toLowerCase() === ruleObj.description.toLowerCase()
+            );
+
+            if (!isDuplicate) {
+              await addRule(ruleObj.name, ruleObj.description, true);
+              // Add to local rules array to prevent duplicates within the same batch processing
+              rules.push({ name: ruleObj.name, pattern: ruleObj.description, is_proposed: true });
+            }
           }
         }
       }

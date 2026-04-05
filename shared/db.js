@@ -521,8 +521,13 @@ export const deleteRule = async (id) => {
   }
 };
 
-export const updateRuleStatus = async (id, isActive, isProposed) => {
-  return updateRule(id, { is_active: isActive, is_proposed: isProposed });
+export const updateRuleStatus = async (id, isActive, isProposed, name, pattern) => {
+  return updateRule(id, { 
+    is_active: isActive, 
+    is_proposed: isProposed,
+    name: name,
+    pattern: pattern
+  });
 };
 
 export const deleteAccount = async (account) => {

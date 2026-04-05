@@ -26,9 +26,15 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { is_active, is_proposed } = req.body;
+  const { name, pattern, is_active, is_proposed } = req.body;
   try {
-    await updateRuleStatus(id, is_active, is_proposed);
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (pattern !== undefined) updates.pattern = pattern;
+    if (is_active !== undefined) updates.is_active = is_active;
+    if (is_proposed !== undefined) updates.is_proposed = is_proposed;
+    
+    await updateRuleStatus(id, updates.is_active, updates.is_proposed, updates.name, updates.pattern);
     res.json({ message: 'Rule updated successfully' });
   } catch (err) {
     console.error(err);

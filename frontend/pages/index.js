@@ -252,11 +252,11 @@ export default function Home() {
             });
             fetchRules();
           }}
-          onUpdateRuleStatus={async (id, is_active, is_proposed) => {
+          onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern) => {
             await fetch(`/api/rules/${id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_active, is_proposed })
+              body: JSON.stringify({ is_active, is_proposed, name, pattern })
             });
             fetchRules();
           }}
