@@ -53,6 +53,8 @@ export const initDb = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS rules (
         id SERIAL PRIMARY KEY,
+        type TEXT DEFAULT 'validation',
+        category TEXT,
         name TEXT NOT NULL,
         pattern TEXT NOT NULL,
         is_active BOOLEAN DEFAULT true,
@@ -62,19 +64,6 @@ export const initDb = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
-    // Check if expected_amount column exists
-    const checkExpectedAmount = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'rules' AND column_name = 'expected_amount'
-    `);
-    
-    if (checkExpectedAmount.rows.length === 0) {
-      console.log('Adding "expected_amount" and "amount_margin" columns to "rules" table');
-      await client.query('ALTER TABLE rules ADD COLUMN expected_amount DECIMAL(12, 2)');
-      await client.query('ALTER TABLE rules ADD COLUMN amount_margin DECIMAL(12, 2)');
-    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS background_jobs (
@@ -90,31 +79,6 @@ export const initDb = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
-    // Check if worker_id column exists
-    const checkColumn = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'background_jobs' AND column_name = 'worker_id'
-    `);
-    
-    if (checkColumn.rows.length === 0) {
-      console.warn('CRITICAL: column "worker_id" is MISSING from table "background_jobs"');
-    } else {
-      console.log('SUCCESS: column "worker_id" exists in table "background_jobs"');
-    }
-
-    // Check and add ai_enriched column to transactions if it doesn't exist
-    const checkAiEnriched = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'transactions' AND column_name = 'ai_enriched'
-    `);
-    
-    if (checkAiEnriched.rows.length === 0) {
-      console.log('Adding "ai_enriched" column to "transactions" table');
-      await client.query('ALTER TABLE transactions ADD COLUMN ai_enriched BOOLEAN DEFAULT false');
-    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_models (
@@ -133,6 +97,58 @@ export const initDb = async () => {
         PRIMARY KEY (date, account)
       );
     `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ponto_tokens (
+        id SERIAL PRIMARY KEY,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ponto_accounts (
+        ponto_id UUID PRIMARY KEY,
+        account_id TEXT UNIQUE NOT NULL, -- This is our local account identifier (e.g. IBAN)
+        name TEXT,
+        currency TEXT,
+        institution_name TEXT,
+        synchronized_at TIMESTAMP,
+        is_active BOOLEAN DEFAULT true
+      );
+    `);
+
+    // Ensure refresh_token is nullable for Client Credentials flow
+    await client.query(`
+      ALTER TABLE ponto_tokens ALTER COLUMN refresh_token DROP NOT NULL;
+    `).catch(() => {}); // Ignore error if it's already nullable
+    
+    // Initialize default categories if they don't exist
+    const defaultCategories = [
+      { name: 'Income', description: 'Salary, bonuses, and employer reimbursements' },
+      { name: 'Housing', description: 'Rent, mortgage, HOA fees, and property taxes' },
+      { name: 'Groceries', description: 'Supermarkets, food markets, everyday household consumables' },
+      { name: 'Dining & Drinks', description: 'Restaurants, bars, coffee shops, and takeout' },
+      { name: 'Transportation', description: 'Public transit, rideshares, gas, parking, and tolls' },
+      { name: 'Shopping', description: 'Clothing, electronics, and non-essential physical goods' },
+      { name: 'Health & Wellness', description: 'Medical, dental, pharmacy, gym, and personal care' },
+      { name: 'Insurance', description: 'Health, car, home, and life insurance premiums' },
+      { name: 'Subscriptions', description: 'Streaming services, software, magazines, and memberships' },
+      { name: 'Education', description: 'Tuition, books, courses, and student loans' },
+      { name: 'Travel & Leisure', description: 'Flights, hotels, vacations, movies, and events' },
+      { name: 'Gifts & Donations', description: 'Charity, presents, and contributions' },
+      { name: 'Finance & Taxes', description: 'Bank fees, tax payments, and professional services' },
+      { name: 'Savings & Investments', description: 'Transfers to savings, brokerage, and crypto accounts' },
+      { name: 'Payment requests', description: 'Tikkie, Venmo, or other peer-to-peer payment requests' },
+      { name: 'Other', description: 'Miscellaneous transactions that do not fit anywhere else' }
+    ];
+
+    await client.query(
+      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING',
+      ['categories', JSON.stringify(defaultCategories)]
+    );
 
     console.log('Database schema initialized');
   } catch (err) {
@@ -215,6 +231,133 @@ export const getTransactionsByIds = async (ids) => {
   }
 };
 
+export const getPontoToken = async () => {
+  try {
+    const res = await pool.query('SELECT * FROM ponto_tokens ORDER BY expires_at DESC LIMIT 1');
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error fetching Ponto token:', err);
+    throw err;
+  }
+};
+
+export const savePontoToken = async (accessToken, refreshToken, expiresIn) => {
+  try {
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    const res = await pool.query(
+      'INSERT INTO ponto_tokens (access_token, refresh_token, expires_at) VALUES ($1, $2, $3) RETURNING *',
+      [accessToken, refreshToken, expiresAt]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error saving Ponto token:', err);
+    throw err;
+  }
+};
+
+export const getPontoAccounts = async (onlyActive = false) => {
+  try {
+    let query = 'SELECT * FROM ponto_accounts';
+    if (onlyActive) query += ' WHERE is_active = true';
+    const res = await pool.query(query);
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching Ponto accounts:', err);
+    throw err;
+  }
+};
+
+export const upsertPontoAccount = async (account) => {
+  const { ponto_id, account_id, name, currency, institution_name } = account;
+  try {
+    const res = await pool.query(
+      `INSERT INTO ponto_accounts (ponto_id, account_id, name, currency, institution_name)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (ponto_id) DO UPDATE SET
+         account_id = EXCLUDED.account_id,
+         name = EXCLUDED.name,
+         currency = EXCLUDED.currency,
+         institution_name = EXCLUDED.institution_name
+       RETURNING *`,
+      [ponto_id, account_id, name, currency, institution_name]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error upserting Ponto account:', err);
+    throw err;
+  }
+};
+
+export const setPontoAccountStatus = async (pontoId, isActive) => {
+  try {
+    const res = await pool.query(
+      'UPDATE ponto_accounts SET is_active = $2 WHERE ponto_id = $1 RETURNING *',
+      [pontoId, isActive]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error setting Ponto account status:', err);
+    throw err;
+  }
+};
+
+export const getLatestTransactionDate = async (account) => {
+  try {
+    const res = await pool.query(
+      'SELECT MAX(date) as latest FROM transactions WHERE account = $1',
+      [account]
+    );
+    return res.rows[0].latest;
+  } catch (err) {
+    console.error('Error fetching latest transaction date:', err);
+    throw err;
+  }
+};
+
+export const saveTransaction = async (tx) => {
+  try {
+    const res = await pool.query(
+      `INSERT INTO transactions (
+        date, account, name_description, counterparty, amount, currency, source, external_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (external_id) DO NOTHING
+      RETURNING *`,
+      [tx.date, tx.account, tx.name_description, tx.counterparty, tx.amount, tx.currency, tx.source, tx.external_id]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error saving transaction:', err);
+    throw err;
+  }
+};
+
+export const updateDailyBalance = async (date, account, balance) => {
+  try {
+    await pool.query(
+      `INSERT INTO daily_balances (date, account, balance)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (date, account) DO UPDATE SET balance = EXCLUDED.balance`,
+      [date, account, balance]
+    );
+  } catch (err) {
+    console.error('Error updating daily balance:', err);
+    throw err;
+  }
+};
+
+export const getTransactionsForBalanceCalc = async (account, fromDate) => {
+  try {
+    const res = await pool.query(
+      'SELECT date, amount FROM transactions WHERE account = $1 AND date >= $2 ORDER BY date DESC',
+      [account, fromDate]
+    );
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching transactions for balance calc:', err);
+    throw err;
+  }
+};
+
 export const insertTransaction = async (client, data) => {
   try {
     const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata } = data;
@@ -283,11 +426,11 @@ export const getRules = async () => {
   }
 };
 
-export const addRule = async (name, pattern, isProposed = false, expectedAmount = null, amountMargin = null) => {
+export const addRule = async (name, pattern, isProposed = false, expectedAmount = null, amountMargin = null, type = 'validation', category = null) => {
   try {
     const res = await pool.query(
-      'INSERT INTO rules (name, pattern, is_proposed, expected_amount, amount_margin) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name, pattern, isProposed, expectedAmount, amountMargin]
+      'INSERT INTO rules (name, pattern, is_proposed, expected_amount, amount_margin, type, category) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [name, pattern, isProposed, expectedAmount, amountMargin, type, category]
     );
     return res.rows[0];
   } catch (err) {
@@ -298,7 +441,7 @@ export const addRule = async (name, pattern, isProposed = false, expectedAmount 
 
 export const updateRule = async (id, updates) => {
   try {
-    const { name, pattern, is_active, is_proposed, expected_amount, amount_margin } = updates;
+    const { name, pattern, is_active, is_proposed, expected_amount, amount_margin, type, category } = updates;
     
     // If name or pattern are not provided, we should fetch current ones or only update provided fields
     // But based on current usage, we are calling it with { is_active, is_proposed }
@@ -332,6 +475,14 @@ export const updateRule = async (id, updates) => {
     if (amount_margin !== undefined) {
       setClauses.push(`amount_margin = $${idx++}`);
       params.push(amount_margin);
+    }
+    if (type !== undefined) {
+      setClauses.push(`type = $${idx++}`);
+      params.push(type);
+    }
+    if (category !== undefined) {
+      setClauses.push(`category = $${idx++}`);
+      params.push(category);
     }
 
     if (setClauses.length === 0) return null;
@@ -486,7 +637,7 @@ export const getTrend = async () => {
           t.amount,
           t.time,
           t.id,
-          t.metadata->'ai_categories' as categories
+          t.metadata->>'ai_category' as category
         FROM transactions t
         JOIN account_names an ON t.account = an.account
         
@@ -498,7 +649,7 @@ export const getTrend = async () => {
           0 as amount,
           NULL as time,
           -1 as id,
-          NULL as categories
+          NULL as category
         FROM daily_balances db
         JOIN account_names an ON db.account = an.account
         WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE account = db.account AND date = db.date)
@@ -511,7 +662,7 @@ export const getTrend = async () => {
           SUM(amount) OVER (PARTITION BY account ORDER BY date, time NULLS FIRST, id)
         ) as balance,
         amount,
-        categories
+        category
       FROM trend_data
       ORDER BY date ASC, time ASC NULLS FIRST, id ASC
     `);

@@ -14,10 +14,13 @@ RUN npm run frontend:build
 # Production stage
 FROM node:25-alpine
 
+# Install curl for troubleshooting/consistency
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
-# Copy built frontend assets
-COPY --from=builder /app/frontend/.next ./frontend/.next
+# Copy built frontend assets and configuration
+COPY --from=builder /app/frontend ./frontend
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 

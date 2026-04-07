@@ -1,6 +1,11 @@
 import express from 'express';
-import { getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount, upsertAIModel, getAIModels, getUnenrichedTransactions, createJob } from '../db.js';
+import {
+  getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount,
+  upsertAIModel, getAIModels, getUnenrichedTransactions, createJob,
+  getPontoAccounts, upsertPontoAccount, setPontoAccountStatus
+} from '../db.js';
 import { AIService } from '../../shared/services/ai.js';
+import { PontoService } from '../ponto.js';
 import { aiQueue } from '../queue.js';
 
 const router = express.Router();
@@ -8,10 +13,21 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const accountNames = await getAccountNames();
-    res.json({ account_names: accountNames });
+    const categories = await getSettings('categories');
+    res.json({ account_names: accountNames, categories: categories || [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+router.post('/categories', async (req, res) => {
+  try {
+    await updateSettings('categories', req.body);
+    res.json({ message: 'Categories updated successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update categories' });
   }
 });
 
@@ -38,6 +54,68 @@ router.post('/ai_config', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update AI config' });
+  }
+});
+
+router.get('/ponto_config', async (req, res) => {
+  try {
+    const config = await getSettings('ponto_config');
+    const accounts = await getPontoAccounts();
+    const token = await PontoService.getValidToken().catch(() => null);
+    
+    res.json({
+      ...(config || { clientId: '', clientSecret: '' }),
+      accounts: accounts,
+      isConnected: !!token
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch Ponto config' });
+  }
+});
+
+router.post('/ponto_config', async (req, res) => {
+  try {
+    await updateSettings('ponto_config', req.body);
+    res.json({ message: 'Ponto configuration updated successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update Ponto config' });
+  }
+});
+
+router.post('/ponto_sync_accounts', async (req, res) => {
+  try {
+    const pontoAccounts = await PontoService.fetchAccounts();
+    const savedAccounts = [];
+    
+    for (const pa of pontoAccounts) {
+      const account = {
+        ponto_id: pa.id,
+        account_id: pa.attributes.reference, // Usually IBAN
+        name: pa.attributes.description,
+        currency: pa.attributes.currency,
+        institution_name: pa.relationships?.financialInstitution?.data?.id // Simplified
+      };
+      const saved = await upsertPontoAccount(account);
+      savedAccounts.push(saved);
+    }
+    
+    res.json(savedAccounts);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: `Failed to sync Ponto accounts: ${err.message}` });
+  }
+});
+
+router.post('/ponto_account_status', async (req, res) => {
+  try {
+    const { pontoId, isActive } = req.body;
+    const updated = await setPontoAccountStatus(pontoId, isActive);
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update Ponto account status' });
   }
 });
 
@@ -98,10 +176,8 @@ router.post('/trigger-ai-enrichment', async (req, res) => {
     });
 
     const categoryStats = transactions.reduce((acc, t) => {
-      const cats = t.metadata?.ai_categories || ['Uncategorized'];
-      cats.forEach(cat => {
-        acc[cat] = (acc[cat] || 0) + 1;
-      });
+      const cat = t.metadata?.ai_category || 'Uncategorized';
+      acc[cat] = (acc[cat] || 0) + 1;
       return acc;
     }, {});
 

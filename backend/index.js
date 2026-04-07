@@ -7,6 +7,8 @@ import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/upload.js';
 import rulesRoutes from './routes/rules.js';
 import jobRoutes from './routes/jobs.js';
+import pontoRoutes from './routes/ponto.js';
+import { pontoQueue } from './queue.js';
 
 const app = express();
 app.use(cors());
@@ -67,13 +69,30 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/rules', rulesRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/integrations/ponto', pontoRoutes);
 
 const startServer = async () => {
+  // Start listening immediately so healthchecks pass while we initialize
+  const server = app.listen(port, () => {
+    console.log(`Backend listening at http://0.0.0.0:${port}`);
+  });
+
   try {
+    const dbUrl = process.env.DATABASE_URL || '';
+    const maskedUrl = dbUrl.replace(/:([^@]+)@/, ':****@');
+    console.log(`[Backend] Starting with DATABASE_URL: ${maskedUrl}`);
+    
     await initDb();
-    app.listen(port, () => {
-      console.log(`Backend listening at http://0.0.0.0:${port}`);
-    });
+    
+    // Schedule Ponto Sync daily at 04:00 AM
+    // We pass empty data because the worker will create a database job record when it actually triggers
+    await pontoQueue.add('ponto-sync',
+      {},
+      {
+        repeat: { pattern: '0 4 * * *' },
+        jobId: 'ponto-daily-sync' // Fixed ID to prevent duplicates
+      }
+    );
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

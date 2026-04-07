@@ -170,11 +170,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
       const amount = parseFloat(item.amount);
       if (amount >= 0) return; // Only focus on spending
 
-      const cats = item.categories || ['Uncategorized'];
-      cats.forEach(cat => {
-        if (!categories[cat]) categories[cat] = 0;
-        categories[cat] += Math.abs(amount);
-      });
+      const cat = item.category || 'Uncategorized';
+      if (!categories[cat]) categories[cat] = 0;
+      categories[cat] += Math.abs(amount);
     });
 
     return Object.entries(categories)
@@ -218,12 +216,10 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
         topCategories.forEach(cat => dailyData[dateStr][cat] = 0);
       }
 
-      const cats = item.categories || ['Uncategorized'];
-      cats.forEach(cat => {
-        if (topCategories.includes(cat)) {
-          dailyData[dateStr][cat] += Math.abs(amount);
-        }
-      });
+      const cat = item.category || 'Uncategorized';
+      if (topCategories.includes(cat)) {
+        dailyData[dateStr][cat] += Math.abs(amount);
+      }
     });
 
     return Object.values(dailyData).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -690,9 +686,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                         </div>
                         <div style={{ fontSize: '0.75em', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           {t.account_display_name}
-                          {t.metadata?.ai_categories && t.metadata.ai_categories.map((cat, i) => (
-                            <CategoryBadge key={i} category={cat} />
-                          ))}
+                          {t.metadata?.ai_category && (
+                            <CategoryBadge category={t.metadata.ai_category} />
+                          )}
                         </div>
                       </div>
                     </div>

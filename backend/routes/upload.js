@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { insertTransaction, upsertDailyBalance, pool, createJob, getSettings, getRules } from '../db.js';
+import { insertTransaction, upsertDailyBalance, pool, createJob, updateJob, getSettings, getRules } from '../db.js';
 import { parseBankCsv, parseBalanceCsv } from '../parser.js';
 import { aiQueue, flowProducer } from '../queue.js';
 import { AIService } from '../../shared/services/ai.js';
@@ -163,16 +163,20 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     return res.status(400).json({ error: 'Target account ID is required' });
   }
 
+  const importJobId = await createJob('csv_import', { accountId });
+
   try {
+    await updateJob(importJobId, { status: 'processing', progress: 5, log: 'Starting CSV import process...' });
+    
     const normalizedRows = parseBankCsv(txContent);
     const dailyBalances = balContent ? parseBalanceCsv(balContent) : [];
 
     if (normalizedRows.length === 0) {
+      await updateJob(importJobId, { status: 'failed', error: 'No transactions found in CSV' });
       return res.status(400).json({ error: 'No transactions found in CSV. Please ensure your CSV uses English or Dutch headers and has a valid date format (yyyyMMdd).' });
     }
 
     // Validation: Ensure all rows match the selected account
-    // If a row has an account, it MUST match the selected accountId exactly (ignoring whitespace)
     const invalidRows = normalizedRows.filter(row => {
       if (!row.account) return false;
       return row.account.replace(/\s/g, '') !== accountId.replace(/\s/g, '');
@@ -180,14 +184,17 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
     if (invalidRows.length > 0) {
       const distinctBadAccounts = [...new Set(invalidRows.map(r => r.account))];
-      return res.status(400).json({
-        error: `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}. Please ensure the account exists in Settings.`
-      });
+      const errorMsg = `CSV contains transactions for different accounts: ${distinctBadAccounts.join(', ')}. Target account was: ${accountId}.`;
+      await updateJob(importJobId, { status: 'failed', error: errorMsg });
+      return res.status(400).json({ error: errorMsg });
     }
 
     if (!balContent) {
+      await updateJob(importJobId, { status: 'failed', error: 'Balance overview file is required' });
       return res.status(400).json({ error: 'Balance overview file is now required for all imports to ensure data integrity.' });
     }
+
+    await updateJob(importJobId, { progress: 20, log: `Parsed ${normalizedRows.length} transactions and ${dailyBalances.length} balance entries. Validating...` });
 
     const toDateStr = (d) => {
       const year = d.getFullYear();
@@ -206,16 +213,13 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
     const filteredBalancesForVal = dailyBalances.filter(b => b.account.replace(/\s/g, '') === accountId.replace(/\s/g, ''));
     
-    // 1. Validate pre-day (starting balance)
     const startingBalanceEntry = filteredBalancesForVal.find(b => toDateStr(b.date) === preDayStr);
     if (!startingBalanceEntry) {
-      return res.status(400).json({
-        error: `Missing starting balance for ${preDayStr} (day before first transaction). Balance overview must start at least one day before transactions.`
-      });
+      const errorMsg = `Missing starting balance for ${preDayStr} (day before first transaction).`;
+      await updateJob(importJobId, { status: 'failed', error: errorMsg });
+      return res.status(400).json({ error: errorMsg });
     }
 
-    // 2. Daily cross-reference validation
-    const discrepancies = [];
     const dailyBalanceMap = filteredBalancesForVal.reduce((acc, b) => {
       acc[toDateStr(b.date)] = b.balance;
       return acc;
@@ -231,7 +235,6 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     const txDays = [...new Set(sortedTxsForVal.map(t => toDateStr(t.date)))].sort();
     const latestTxDateStr = toDateStr(latestTxDate);
     
-    // Sort all reported balance days to iterate through them, but only up to the last transaction date
     const balanceDays = Object.keys(dailyBalanceMap)
       .filter(dStr => dStr <= latestTxDateStr)
       .sort();
@@ -245,22 +248,14 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       if (reportedBalance !== undefined) {
         const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
         if (Math.abs(validationBalance - reportedBalanceRounded) > 0.001) {
-          discrepancies.push({
-            date: dayStr,
-            expected: reportedBalance,
-            calculated: validationBalance,
-            diff: reportedBalance - validationBalance
-          });
+          const errorMsg = `Balance validation failed at ${dayStr}. Expected ${reportedBalanceRounded}, calculated ${validationBalance}.`;
+          await updateJob(importJobId, { status: 'failed', error: errorMsg });
+          return res.status(400).json({ error: errorMsg });
         }
       }
     }
 
-    if (discrepancies.length > 0) {
-      return res.status(400).json({
-        error: 'Balance validation failed. Transactions do not match balance overview.',
-        discrepancies
-      });
-    }
+    await updateJob(importJobId, { progress: 50, log: 'Validation successful. Preparing database insertion...' });
 
     const client = await pool.connect();
     const rowIds = [];
@@ -270,7 +265,6 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
       await client.query('BEGIN');
       
-      // Use pre-day balance to set or adjust initial balance
       const initialBalId = await insertTransaction(client, {
         date: preDay,
         time: '00:00:00',
@@ -285,7 +279,7 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
         metadata: { source: 'balance_file', anchor_type: 'pre_day', anchor_date: preDayStr }
       });
       if (initialBalId) rowIds.push(initialBalId);
-      // Save official daily balances
+      
       for (const bal of filteredBalancesForVal) {
           await upsertDailyBalance(client, {
               date: bal.date,
@@ -303,10 +297,10 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       }
 
       await client.query('COMMIT');
+      await updateJob(importJobId, { progress: 80, log: `Successfully saved ${normalizedRows.length} transactions to database.` });
       
-      let jobId = null;
+      let aiJobId = null;
       if (rowIds.length > 0 && accountSettings?.ai_enabled) {
-        // Fetch AI config, rules and historical context once in the backend
         const config = await getSettings('ai_config');
         if (config?.enabled) {
           const rules = await getRules();
@@ -316,31 +310,25 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
           const transactionsToProcess = normalizedRows.filter(r => rowIds.includes(r.id));
           
-          // Split into chunks of 50 for efficiency
           const chunkSize = 50;
           const chunks = [];
           for (let i = 0; i < transactionsToProcess.length; i += chunkSize) {
             chunks.push(transactionsToProcess.slice(i, i + chunkSize));
           }
 
-          // Create the main background job record
-          jobId = await createJob('ai_categorization', { transactionIds: rowIds, disableAnomalyDetection });
+          aiJobId = await createJob('ai_categorization', { transactionIds: rowIds, disableAnomalyDetection });
 
-          // Create a Flow: Parent (finalizer) and Children (chunks)
           await flowProducer.add({
             name: 'finalize',
             queueName: 'ai-processing',
-            data: { jobId, totalChunks: chunks.length },
-            opts: {
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 1000 }
-            },
+            data: { jobId: aiJobId, totalChunks: chunks.length },
+            opts: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
             children: chunks.map((chunk, index) => ({
               name: 'analyze-chunk',
               queueName: 'ai-processing',
               data: {
                 transactions: chunk,
-                jobId,
+                jobId: aiJobId,
                 chunkNum: index + 1,
                 totalChunks: chunks.length,
                 disableAnomalyDetection,
@@ -348,23 +336,23 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
                 activeRules,
                 config
               },
-              opts: {
-                attempts: 5,
-                backoff: { type: 'exponential', delay: 2000 }
-              }
+              opts: { attempts: 5, backoff: { type: 'exponential', delay: 2000 } }
             }))
           });
           
-          console.log(`[Backend] Created BullMQ Flow for job ${jobId} with ${chunks.length} chunks`);
+          await updateJob(importJobId, { log: `Triggered AI categorization job #${aiJobId}` });
         }
       }
 
+      await updateJob(importJobId, { status: 'completed', progress: 100, log: 'CSV import completed successfully.' });
+
       res.json({
         message: `Successfully processed ${normalizedRows.length} records for account ${accountId}`,
-        job_id: jobId
+        job_id: aiJobId || importJobId
       });
     } catch (err) {
       await client.query('ROLLBACK');
+      await updateJob(importJobId, { status: 'failed', error: err.message });
       throw err;
     } finally {
       client.release();

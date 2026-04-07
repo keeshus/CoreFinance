@@ -20,7 +20,8 @@ export default function Home() {
   const [jobs, setJobs] = useState([]);
   const [workers, setWorkers] = useState([]);
   const [aiConfig, setAIConfig] = useState(null);
-  const [settings, setSettings] = useState({ own_accounts: [], account_names: [] });
+  const [pontoConfig, setPontoConfig] = useState(null);
+  const [settings, setSettings] = useState({ own_accounts: [], account_names: [], categories: [] });
 
   const fetchSummary = async () => {
     try {
@@ -68,6 +69,11 @@ export default function Home() {
       const aiRes = await fetch('/api/settings/ai_config');
       if (aiRes.ok) {
         setAIConfig(await aiRes.json());
+      }
+
+      const pontoRes = await fetch('/api/settings/ponto_config');
+      if (pontoRes.ok) {
+        setPontoConfig(await pontoRes.json());
       }
     } catch (err) {
       console.error('Error fetching settings:', err);
@@ -125,6 +131,26 @@ export default function Home() {
   useEffect(() => {
     refreshData();
   }, []);
+
+  useEffect(() => {
+    switch (activeTab) {
+      case 'overview':
+        fetchSummary();
+        fetchTransactions();
+        fetchTrend();
+        break;
+      case 'rules':
+        fetchRules();
+        break;
+      case 'jobs':
+        fetchJobs();
+        fetchWorkers();
+        break;
+      case 'settings':
+        fetchSettings();
+        break;
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     let interval;
@@ -254,19 +280,20 @@ export default function Home() {
             {activeTab === 'rules' && (
         <RulesView 
           rules={rules}
-          onAddRule={async (name, pattern, expected_amount, amount_margin) => {
+          categories={settings.categories || []}
+          onAddRule={async (name, pattern, expected_amount, amount_margin, type, category) => {
             await fetch('/api/rules', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, pattern, expected_amount, amount_margin })
+              body: JSON.stringify({ name, pattern, expected_amount, amount_margin, type, category })
             });
             fetchRules();
           }}
-          onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern, expected_amount, amount_margin) => {
+          onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern, expected_amount, amount_margin, type, category) => {
             await fetch(`/api/rules/${id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_active, is_proposed, name, pattern, expected_amount, amount_margin })
+              body: JSON.stringify({ is_active, is_proposed, name, pattern, expected_amount, amount_margin, type, category })
             });
             fetchRules();
           }}
@@ -274,9 +301,16 @@ export default function Home() {
             await fetch(`/api/rules/${id}`, { method: 'DELETE' });
             fetchRules();
           }}
+          onImportRules={async (rules) => {
+            await fetch('/api/rules/import', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(rules)
+            });
+            fetchRules();
+          }}
         />
       )}
-
 
       {activeTab === 'jobs' && (
         <JobsView jobs={jobs} workers={workers} onRefresh={() => { fetchJobs(); fetchWorkers(); }} />
@@ -286,7 +320,16 @@ export default function Home() {
         <SettingsView 
           summary={summary} 
           accountNames={settings.account_names}
+          categories={settings.categories || []}
           onSaveAccountName={handleSaveAccountName} 
+          onSaveCategories={async (categories) => {
+            await fetch('/api/settings/categories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(categories)
+            });
+            fetchSettings();
+          }}
           aiConfig={aiConfig}
           onSaveAIConfig={async (config) => {
             const res = await fetch('/api/settings/ai_config', {
@@ -302,6 +345,42 @@ export default function Home() {
             }
           }}
           onDeleteAccount={handleDeleteAccount}
+          pontoConfig={pontoConfig}
+          onSavePontoConfig={async (config) => {
+            const res = await fetch('/api/settings/ponto_config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(config)
+            });
+            if (res.ok) {
+              fetchSettings();
+            } else {
+              const data = await res.json();
+              throw new Error(data.error || 'Failed to update Ponto configuration');
+            }
+          }}
+          onSyncPontoAccounts={async () => {
+            const res = await fetch('/api/settings/ponto_sync_accounts', { method: 'POST' });
+            if (res.ok) {
+              fetchSettings();
+            } else {
+              const data = await res.json();
+              throw new Error(data.error || 'Failed to sync Ponto accounts');
+            }
+          }}
+          onUpdatePontoAccountStatus={async (pontoId, isActive) => {
+            const res = await fetch('/api/settings/ponto_account_status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pontoId, isActive })
+            });
+            if (res.ok) {
+              fetchSettings();
+            } else {
+              const data = await res.json();
+              throw new Error(data.error || 'Failed to update Ponto account status');
+            }
+          }}
         />
       )}
     </AppLayout>

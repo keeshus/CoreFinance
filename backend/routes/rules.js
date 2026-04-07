@@ -14,9 +14,9 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, pattern, expected_amount, amount_margin } = req.body;
+  const { name, pattern, expected_amount, amount_margin, type, category } = req.body;
   try {
-    await addRule(name, pattern, false, expected_amount, amount_margin);
+    await addRule(name, pattern, false, expected_amount, amount_margin, type, category);
     res.json({ message: 'Rule added successfully' });
   } catch (err) {
     console.error(err);
@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, pattern, is_active, is_proposed, expected_amount, amount_margin } = req.body;
+  const { name, pattern, is_active, is_proposed, expected_amount, amount_margin, type, category } = req.body;
   try {
     const updates = {};
     if (name !== undefined) updates.name = name;
@@ -35,6 +35,8 @@ router.put('/:id', async (req, res) => {
     if (is_proposed !== undefined) updates.is_proposed = is_proposed;
     if (expected_amount !== undefined) updates.expected_amount = expected_amount;
     if (amount_margin !== undefined) updates.amount_margin = amount_margin;
+    if (type !== undefined) updates.type = type;
+    if (category !== undefined) updates.category = category;
     
     await updateRule(id, updates);
     res.json({ message: 'Rule updated successfully' });
@@ -52,6 +54,48 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete rule' });
+  }
+});
+
+router.get('/export', async (req, res) => {
+  try {
+    const rules = await getRules();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename=smart_rules.json');
+    res.json(rules);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to export rules' });
+  }
+});
+
+router.post('/import', async (req, res) => {
+  const rules = req.body;
+  if (!Array.isArray(rules)) {
+    return res.status(400).json({ error: 'Invalid format, expected an array of rules' });
+  }
+
+  try {
+    let importedCount = 0;
+    for (const rule of rules) {
+      const { name, pattern, is_proposed, expected_amount, amount_margin, type, category } = rule;
+      if (name && pattern) {
+        await addRule(
+          name,
+          pattern,
+          is_proposed || false,
+          expected_amount,
+          amount_margin,
+          type || 'validation',
+          category
+        );
+        importedCount++;
+      }
+    }
+    res.json({ message: `Successfully imported ${importedCount} rules` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to import rules' });
   }
 });
 

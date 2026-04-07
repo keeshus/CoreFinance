@@ -14,4 +14,5 @@ connection.on('error', (err) => {
 });
 
 export const aiQueue = new Queue('ai-processing', { connection });
+export const pontoQueue = new Queue('ponto-sync', { connection });
 export const flowProducer = new FlowProducer({ connection });

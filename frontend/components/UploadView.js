@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
+import { ShieldCheck, FileText, History, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function UploadView({ file, balFile, uploading, message, onFileChange, onBalFileChange, onUpload, accounts }) {
   const [verificationResult, setVerificationResult] = React.useState(null);
@@ -161,6 +161,24 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
               <ShieldCheck size={18} />
               Analyze & Verify
             </button>
+
+            <div style={{ borderTop: '1px solid #e2e8f0', margin: '10px 0' }} />
+            
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: '0.85em', color: '#64748b', marginBottom: '15px' }}>Prefer automated sync? Connect your bank once.</p>
+              <a
+                href="/api/integrations/ponto/auth"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '10px',
+                  background: '#f8fafc', color: '#1e293b', border: '1px solid #e2e8f0',
+                  padding: '12px 24px', borderRadius: '16px', fontWeight: 'bold', textDecoration: 'none',
+                  fontSize: '0.9em', transition: 'all 0.2s'
+                }}
+              >
+                <RefreshCw size={18} color="#0284c7" />
+                Connect via Ponto API
+              </a>
+            </div>
           </div>
         )}
 

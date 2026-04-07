@@ -16,11 +16,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
       - VALKEY_URL=valkey://valkey:6379
+      - INTERNAL_API_KEY=dev-secret-key-123
+      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     volumes:
       - core-finance-backend-data:/app/data
     depends_on:
@@ -40,11 +40,12 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
-    env_file:
-      - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql://user:password@db:5432/core_finance
       - VALKEY_URL=valkey://valkey:6379
+      - INTERNAL_API_KEY=dev-secret-key-123
+      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+      - BACKEND_URL=http://backend:3000
     depends_on:
       backend:
         condition: service_healthy
@@ -78,8 +79,10 @@ services:
     image: postgres:18-alpine
     ports:
       - "5432:5432"
-    env_file:
-      - .env
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=core_finance
     volumes:
       - core-finance-db-data:/var/lib/postgresql/data
     restart: always

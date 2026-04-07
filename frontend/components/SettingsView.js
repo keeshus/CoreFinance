@@ -5,11 +5,57 @@ import {
 } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 
-export default function SettingsView({ summary, accountNames = [], onSaveAccountName, aiConfig, onSaveAIConfig, onDeleteAccount }) {
+export default function SettingsView({
+  summary, accountNames = [], categories = [],
+  onSaveAccountName, onSaveCategories,
+  aiConfig, onSaveAIConfig,
+  onDeleteAccount,
+  pontoConfig, onSavePontoConfig, onSyncPontoAccounts, onUpdatePontoAccountStatus
+}) {
   const [editingAccount, setEditingAccount] = useState(null);
   const [newAccountName, setNewAccountName] = useState('');
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [addAccountData, setAddAccountData] = useState({ id: '', name: '', ai: false });
+
+  // Categories
+  const [localCategories, setLocalCategories] = useState([...categories]);
+  const [editingCategoryIdx, setEditingCategoryIdx] = useState(null);
+  const [editCategoryData, setEditCategoryData] = useState({ name: '', description: '' });
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+
+  useEffect(() => {
+    setLocalCategories([...categories]);
+  }, [categories]);
+
+  const handleSaveCategoriesList = async (newCats) => {
+    setLocalCategories(newCats);
+    try {
+      await onSaveCategories(newCats);
+      showNotification('Categories saved successfully');
+    } catch (err) {
+      showNotification('Failed to save categories', 'error');
+    }
+  };
+
+  const handleUpdateCategory = (idx) => {
+    const newCats = [...localCategories];
+    newCats[idx] = { ...editCategoryData };
+    handleSaveCategoriesList(newCats);
+    setEditingCategoryIdx(null);
+  };
+
+  const handleAddCategory = () => {
+    if (!editCategoryData.name) return;
+    const newCats = [...localCategories, { ...editCategoryData }];
+    handleSaveCategoriesList(newCats);
+    setIsAddingCategory(false);
+    setEditCategoryData({ name: '', description: '' });
+  };
+
+  const handleDeleteCategory = (idx) => {
+    const newCats = localCategories.filter((_, i) => i !== idx);
+    handleSaveCategoriesList(newCats);
+  };
 
   const [localAIConfig, setLocalAIConfig] = useState({
     enabled: false,
@@ -24,6 +70,16 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
   const [enrichmentResult, setEnrichmentResult] = useState(null);
   const [notification, setNotification] = useState(null);
 
+  const [localPontoConfig, setLocalPontoConfig] = useState({
+    clientId: '',
+    clientSecret: '',
+    isConnected: false,
+    accounts: []
+  });
+
+  const [isSyncingAccounts, setIsSyncingAccounts] = useState(false);
+  const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
+
   useEffect(() => {
     if (aiConfig) {
       const { availableModels: cachedModels, ...config } = aiConfig;
@@ -33,6 +89,12 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
       }
     }
   }, [aiConfig]);
+
+  useEffect(() => {
+    if (pontoConfig) {
+      setLocalPontoConfig(pontoConfig);
+    }
+  }, [pontoConfig]);
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -88,6 +150,24 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
     }
   };
 
+  const triggerManualSync = async () => {
+    setIsSyncingTransactions(true);
+    try {
+      const res = await fetch('/api/integrations/ponto/sync', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showNotification(`Manual sync started! (Job ID: ${data.jobId})`);
+      } else {
+        const err = await res.json();
+        showNotification(err.error || 'Failed to start sync', 'error');
+      }
+    } catch (err) {
+      showNotification('Failed to connect to server', 'error');
+    } finally {
+      setIsSyncingTransactions(false);
+    }
+  };
+
   const handleSaveAIConfig = async () => {
     try {
       await onSaveAIConfig(localAIConfig);
@@ -116,6 +196,30 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
     }
   };
 
+  const handleSavePontoConfig = async () => {
+    try {
+      await onSavePontoConfig({
+        clientId: localPontoConfig.clientId,
+        clientSecret: localPontoConfig.clientSecret
+      });
+      showNotification('Ponto Configuration saved successfully');
+    } catch (err) {
+      showNotification(err.message || 'Failed to save Ponto Configuration', 'error');
+    }
+  };
+
+  const handleSyncPontoAccounts = async () => {
+    setIsSyncingAccounts(true);
+    try {
+      await onSyncPontoAccounts();
+      showNotification('Ponto accounts synchronized successfully');
+    } catch (err) {
+      showNotification(err.message || 'Failed to sync Ponto accounts', 'error');
+    } finally {
+      setIsSyncingAccounts(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', position: 'relative' }}>
       {/* Toast Notification */}
@@ -139,6 +243,135 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
           `}</style>
         </div>
       )}
+
+      {/* Ponto Integration Section */}
+      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <CreditCard size={20} color="#0284c7" /> Ponto API Integration
+         </h3>
+         
+         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <p style={{ color: '#64748b', fontSize: '0.9em', margin: 0 }}>
+              Configure your Ponto credentials to automate bank synchronization. Get your credentials from the <a href="https://developer.myponto.com" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', textDecoration: 'underline' }}>Ponto Developer Portal</a>.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Client ID</label>
+                <input
+                  type="text"
+                  value={localPontoConfig.clientId}
+                  onChange={(e) => setLocalPontoConfig({ ...localPontoConfig, clientId: e.target.value })}
+                  placeholder="Enter Ponto Client ID"
+                  style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Client Secret</label>
+                <input
+                  type="password"
+                  value={localPontoConfig.clientSecret}
+                  onChange={(e) => setLocalPontoConfig({ ...localPontoConfig, clientSecret: e.target.value })}
+                  placeholder="Enter Ponto Client Secret"
+                  style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleSavePontoConfig}
+                style={{
+                  padding: '10px 20px', background: '#0284c7', color: '#fff',
+                  border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '8px'
+                }}
+              >
+                <Save size={18} /> Save Credentials
+              </button>
+
+              <a
+                href="/api/integrations/ponto/auth"
+                style={{
+                  padding: '10px 20px', background: localPontoConfig.isConnected ? '#10b981' : '#f59e0b', color: '#fff',
+                  textDecoration: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '8px'
+                }}
+              >
+                <RefreshCw size={18} /> {localPontoConfig.isConnected ? 'Reconnect with Ponto' : 'Authorize with Ponto'}
+              </a>
+            </div>
+
+            {localPontoConfig.isConnected && (
+              <div style={{ marginTop: '10px', padding: '20px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <h4 style={{ margin: 0, fontSize: '1em', fontWeight: 'bold' }}>Connected Accounts</h4>
+                  <button
+                    onClick={handleSyncPontoAccounts}
+                    disabled={isSyncingAccounts}
+                    style={{
+                      padding: '6px 12px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '8px',
+                      fontSize: '0.85em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px'
+                    }}
+                  >
+                    <RefreshCw size={14} className={isSyncingAccounts ? 'animate-spin' : ''} />
+                    Sync Accounts
+                  </button>
+                </div>
+
+                {localPontoConfig.accounts && localPontoConfig.accounts.length > 0 && (
+                  <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.9em' }}>Manual Transaction Sync</div>
+                        <div style={{ fontSize: '0.75em', color: '#64748b' }}>Trigger an immediate synchronization of all active accounts.</div>
+                      </div>
+                      <button
+                        onClick={triggerManualSync}
+                        disabled={isSyncingTransactions}
+                        style={{
+                          padding: '8px 16px', background: isSyncingTransactions ? '#cbd5e1' : '#3b82f6', color: '#fff',
+                          border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: isSyncingTransactions ? 'not-allowed' : 'pointer',
+                          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85em'
+                        }}
+                      >
+                        <RefreshCw size={14} className={isSyncingTransactions ? 'animate-spin' : ''} />
+                        {isSyncingTransactions ? 'Syncing...' : 'Sync Now'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {localPontoConfig.accounts && localPontoConfig.accounts.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {localPontoConfig.accounts.map(acc => (
+                      <div key={acc.ponto_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: '#fff', border: '1px solid #f1f5f9', borderRadius: '10px', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 'bold', fontSize: '0.9em' }}>{acc.name}</div>
+                          <div style={{ fontSize: '0.75em', color: '#64748b' }}>{acc.account_id} ({acc.institution_name})</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                           <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+                             <input
+                               type="checkbox"
+                               checked={acc.is_active}
+                               onChange={(e) => onUpdatePontoAccountStatus(acc.ponto_id, e.target.checked)}
+                             />
+                             <span style={{ fontSize: '0.75em', padding: '2px 8px', borderRadius: '10px', background: acc.is_active ? '#dcfce7' : '#fee2e2', color: acc.is_active ? '#166534' : '#991b1b' }}>
+                               {acc.is_active ? 'Sync Enabled' : 'Sync Disabled'}
+                             </span>
+                           </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.85em', color: '#64748b', textAlign: 'center' }}>No accounts connected yet. Try Reconnecting.</p>
+                )}
+              </div>
+            )}
+         </div>
+      </div>
 
       {/* AI Config Section */}
       <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
@@ -280,6 +513,113 @@ export default function SettingsView({ summary, accountNames = [], onSaveAccount
                 )}
               </div>
             )}
+         </div>
+      </div>
+
+      {/* Category Management Section */}
+      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <CheckCircle size={20} color="#10b981" /> Transaction Categories
+            </h3>
+            <button 
+              onClick={() => {
+                setIsAddingCategory(true);
+                setEditCategoryData({ name: '', description: '' });
+              }}
+              style={{ padding: '8px 16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+            >
+              <Plus size={16} /> Add Category
+            </button>
+         </div>
+
+         {isAddingCategory && (
+           <div style={{ marginBottom: '20px', padding: '20px', background: '#ecfdf5', borderRadius: '16px', border: '1px solid #a7f3d0' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
+                  <label style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#10b981' }}>Category Name</label>
+                  <input 
+                    placeholder="e.g. Groceries"
+                    value={editCategoryData.name}
+                    onChange={e => setEditCategoryData({...editCategoryData, name: e.target.value})}
+                    style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #a7f3d0' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 2 }}>
+                  <label style={{ fontSize: '0.75em', fontWeight: 'bold', color: '#10b981' }}>Description (for AI)</label>
+                  <input 
+                    placeholder="e.g. Supermarkets and food markets"
+                    value={editCategoryData.description}
+                    onChange={e => setEditCategoryData({...editCategoryData, description: e.target.value})}
+                    style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #a7f3d0' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button 
+                    onClick={handleAddCategory}
+                    style={{ padding: '10px 20px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Add
+                  </button>
+                  <button 
+                    onClick={() => setIsAddingCategory(false)}
+                    style={{ padding: '10px 20px', background: '#64748b', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+           </div>
+         )}
+
+         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {localCategories.map((cat, idx) => (
+              <div key={idx} style={{ 
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                padding: '12px 20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #f1f5f9'
+              }}>
+                {editingCategoryIdx === idx ? (
+                  <div style={{ display: 'flex', flex: 1, gap: '10px', alignItems: 'center' }}>
+                    <input 
+                      value={editCategoryData.name}
+                      onChange={e => setEditCategoryData({...editCategoryData, name: e.target.value})}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #10b981', outline: 'none', flex: 1 }}
+                    />
+                    <input 
+                      value={editCategoryData.description}
+                      onChange={e => setEditCategoryData({...editCategoryData, description: e.target.value})}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #10b981', outline: 'none', flex: 2 }}
+                    />
+                    <button onClick={() => handleUpdateCategory(idx)} style={{ color: '#10b981', background: 'none', border: 'none', cursor: 'pointer' }}><Check size={18} /></button>
+                    <button onClick={() => setEditingCategoryIdx(null)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                      <span style={{ fontWeight: 'bold', color: '#1e293b' }}>{cat.name}</span>
+                      <span style={{ fontSize: '0.85em', color: '#64748b' }}>{cat.description}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button 
+                        onClick={() => {
+                          setEditingCategoryIdx(idx);
+                          setEditCategoryData({ name: cat.name, description: cat.description || '' });
+                        }}
+                        style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '10px', color: '#64748b', cursor: 'pointer' }}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteCategory(idx)}
+                        style={{ background: '#fef2f2', border: 'none', padding: '8px', borderRadius: '10px', color: '#ef4444', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
          </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import { pool } from '../db.js';
+import { pool, getSettings } from '../db.js';
 
 export class AIService {
   constructor(config) {
@@ -10,22 +10,12 @@ export class AIService {
     this.genAI = new GoogleGenerativeAI(config.apiKey);
     this.modelName = config.model || 'gemini-2.0-flash';
     console.log(`[AIService] Initialized with model: ${this.modelName}`);
-    
-    this.categories = [
-      'Income', 'Housing', 'Groceries', 'Dining & Drinks', 'Transportation',
-      'Shopping', 'Health & Wellness', 'Insurance', 'Subscriptions',
-      'Education', 'Travel & Leisure', 'Gifts & Donations', 'Finance & Taxes',
-      'Savings & Investments', 'Payment requests', 'Other'
-    ];
   }
 
   async getModel(excludeAnomaly = false) {
     const properties = {
       id: { type: SchemaType.STRING },
-      ai_categories: {
-        type: SchemaType.ARRAY,
-        items: { type: SchemaType.STRING }
-      },
+      ai_category: { type: SchemaType.STRING },
       rule_violations: {
         type: SchemaType.ARRAY,
         items: {
@@ -42,17 +32,19 @@ export class AIService {
         items: {
           type: SchemaType.OBJECT,
           properties: {
+            type: { type: SchemaType.STRING },
+            category: { type: SchemaType.STRING },
             name: { type: SchemaType.STRING },
             description: { type: SchemaType.STRING },
             expected_amount: { type: SchemaType.NUMBER },
             amount_margin: { type: SchemaType.NUMBER }
           },
-          required: ['name', 'description']
+          required: ['type', 'name', 'description']
         }
       }
     };
 
-    const required = ['id', 'ai_categories'];
+    const required = ['id', 'ai_category'];
 
     if (!excludeAnomaly) {
       properties.is_anomalous = { type: SchemaType.BOOLEAN };
@@ -105,22 +97,29 @@ export class AIService {
   async processBatch(transactions, activeRules = [], options = {}) {
     const historicalContext = options.historicalContext || [];
     const model = await this.getModel(options.disableAnomalyDetection);
+    const dbCategories = await getSettings('categories') || [];
+
+    const categoryDescriptions = dbCategories.map(c => `- ${c.name}: ${c.description || ''}`).join('\n');
+    const categoryNames = dbCategories.map(c => c.name).join(', ');
 
     const taskList = options.disableAnomalyDetection
-      ? `1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
-      2. 'rule_violations': Array of objects for any active rules that were violated.
-      3. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on the current transaction.`
-      : `1. 'ai_categories': Array of 1-3 best matching categories from: ${this.categories.join(', ')}.
-      2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns for this counterparty.
+      ? `1. 'ai_category': The single best matching category from the available categories list.
+      2. 'rule_violations': Array of objects for any active validation rules that were violated.
+      3. 'proposed_rules': Propose new rules (either validation or categorization) based on detected patterns.`
+      : `1. 'ai_category': The single best matching category from the available categories list.
+      2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns.
       3. 'anomaly_reason': String (optional), explanation of the anomaly.
-      4. 'rule_violations': Array of objects for any active rules that were violated.
-      5. 'proposed_rules': ONLY for recurring transactions (monthly, quarterly, etc.) based on historicalContext and current transaction.`;
+      4. 'rule_violations': Array of objects for any active validation rules that were violated.
+      5. 'proposed_rules': Propose new rules (either validation or categorization) based on detected patterns.`;
 
     const prompt = `
       You are a financial analysis assistant. 
       Analyze the following batch of recent transactions and return a JSON array.
       
       ${options.disableAnomalyDetection ? '' : `### Historical Context (Normal Behavior):\n${JSON.stringify(historicalContext)}`}
+
+      ### Available Categories and Definitions:
+      ${categoryDescriptions}
 
       ### Active Rules to Check (Patterns can be regex or natural language descriptions):
       ${JSON.stringify(activeRules)}
@@ -139,21 +138,24 @@ export class AIService {
       For each transaction, provide:
       ${taskList}
 
-         Each rule_violations object MUST have:
-         - 'rule_id': The ID of the violated rule.
-         - 'reason': A brief, clear explanation of WHY the rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
+         - 'ai_category' MUST strictly be one of: ${categoryNames}.
+         - Categorization rules tell you which category to assign. If a categorization rule matches a transaction, you MUST assign the category specified in that rule.
+         - Validation rules are used to detect anomalies. Only validation rules can generate 'rule_violations'.
+         - Each rule_violations object MUST have:
+           - 'rule_id': The ID of the violated rule.
+           - 'reason': A brief, clear explanation of WHY the rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
+         - If NO validation rules are violated, return an empty array []. NEVER return ["none"] or similar placeholders.
          
-         If NO rules are violated, return an empty array []. NEVER return ["none"] or similar placeholders.
-         
-         A rule is violated if:
+         A validation rule is violated if:
          - The transaction doesnt comply to the given description.
          - IF it has an 'expected_amount' and 'amount_margin', the transaction amount is NOT within [expected_amount - amount_margin, expected_amount + amount_margin].
          
-         Each proposed_rules object MUST have:
-         - 'name': Natural language rule name (e.g. Health Insurance), 
-         - 'description': Natural language description of the rule (e.g. All transactions to AXA for health insurance),
-         - 'expected_amount': 123.45, (the recurring amount)
-         - 'amount_margin': 5.00 (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
+         - Each proposed_rules object MUST have:
+           - 'type': 'validation' OR 'categorization'
+           - 'name': Natural language rule name (e.g. Health Insurance), 
+           - 'description': Natural language description of the rule (e.g. All transactions to AXA for health insurance),
+           - IF type='validation': Provide 'expected_amount' and 'amount_margin' (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
+           - IF type='categorization': Provide 'category' (MUST be exactly one of: ${categoryNames}).
 
       Return ONLY a JSON array of objects.
     `;

@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { pool, getSettings, getRules, addRule, getAccountNames, updateJob } from '../shared/db.js';
+import { pool, getSettings, getRules, addRule, getAccountNames, updateJob, createJob } from '../shared/db.js';
 
 const connection = new IORedis(process.env.VALKEY_URL || 'valkey://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -19,6 +19,8 @@ import os from 'os';
 const workerId = `worker-${os.hostname()}-${process.pid}`;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'default-dev-key';
+
+import { runPontoSync } from './pontoWorker.js';
 
 const pingBackend = async () => {
   if (!INTERNAL_API_KEY) {
@@ -102,11 +104,11 @@ const worker = new Worker('ai-processing', async (job) => {
       console.log(`[Worker] Chunk ${chunkNum} AI call finished. Received ${results?.length} results.`);
 
       for (const res of results) {
-        const { id, ai_categories, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;
+        const { id, ai_category, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;
         
         await pool.query(
           "UPDATE transactions SET metadata = metadata || $2::jsonb, ai_enriched = true WHERE id = $1",
-          [id, JSON.stringify({ ai_categories, is_anomalous, anomaly_reason, rule_violations })]
+          [id, JSON.stringify({ ai_category, is_anomalous, anomaly_reason, rule_violations })]
         );
 
         if (proposed_rules && proposed_rules.length > 0) {
@@ -118,7 +120,7 @@ const worker = new Worker('ai-processing', async (job) => {
             );
 
             if (existingRes.rows.length === 0) {
-              await addRule(ruleObj.name, ruleObj.description, true, ruleObj.expected_amount, ruleObj.amount_margin);
+              await addRule(ruleObj.name, ruleObj.description, true, ruleObj.expected_amount, ruleObj.amount_margin, ruleObj.type || 'validation', ruleObj.category);
             }
           }
         }
@@ -139,7 +141,7 @@ const worker = new Worker('ai-processing', async (job) => {
       await updateJob(jobId, { 
         status: 'completed', 
         progress: 100, 
-        log: `AI categorization completed successfully. Processed ${totalChunks} parallel chunks.` 
+        log: `AI categorization completed successfully. Processed ${totalChunks} parallel chunks.`
       });
       console.log(`[Worker] Job ${jobId} marked as completed.`);
     } catch (err) {
@@ -148,6 +150,20 @@ const worker = new Worker('ai-processing', async (job) => {
     }
   }
 }, { connection, lockDuration: 120000, concurrency: 5 });
+
+const pontoWorker = new Worker('ponto-sync', async (job) => {
+  if (job.name === 'ponto-sync') {
+    let { jobId } = job.data;
+    
+    // If this is a scheduled job without a pre-created DB record, create one now
+    if (!jobId) {
+      jobId = await createJob('ponto-sync', { scheduled: true });
+      console.log(`[Worker] Created new DB job record ${jobId} for scheduled Ponto sync`);
+    }
+
+    await runPontoSync(jobId);
+  }
+}, { connection, lockDuration: 300000, concurrency: 1 });
 
 console.log(`Worker starting (ID: ${workerId})...`);
 console.log(`BullMQ Worker configuration: lockDuration=${worker.opts.lockDuration}ms`);
