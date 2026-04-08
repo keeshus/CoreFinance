@@ -94,14 +94,21 @@ export class PontoService {
     return data.data; // Ponto returns { data: [...] }
   }
 
-  static async fetchTransactions(accountId, { from, to, after } = {}) {
+  static async fetchTransactions(accountId, { from, to, after, nextUrl } = {}) {
     const accessToken = await this.getValidToken();
     if (!accessToken) throw new Error('Not authorized with Ponto');
 
-    let url = `${PONTO_API_URL}/accounts/${accountId}/transactions?limit=100`;
-    if (from) url += `&filter[valueDate][ge]=${from}`;
-    if (to) url += `&filter[valueDate][le]=${to}`;
-    if (after) url += `&after=${after}`;
+    let url;
+    if (nextUrl) {
+      // Use the provided next URL directly for pagination
+      // Ensure it's absolute if needed, but Ponto usually provides absolute links
+      url = nextUrl.startsWith('http') ? nextUrl : `${PONTO_API_URL}${nextUrl}`;
+    } else {
+      url = `${PONTO_API_URL}/accounts/${accountId}/transactions?limit=100`;
+      if (from) url += `&filter[valueDate][ge]=${from}`;
+      if (to) url += `&filter[valueDate][le]=${to}`;
+      if (after) url += `&after=${after}`;
+    }
 
     const response = await fetch(url, {
       headers: {

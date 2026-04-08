@@ -6,7 +6,8 @@ import {
 } from '../db.js';
 import { AIService } from '../../shared/services/ai.js';
 import { PontoService } from '../ponto.js';
-import { aiQueue } from '../queue.js';
+import { aiQueue, pontoQueue } from '../queue.js';
+import { syncPontoAccountsInternal } from './ponto.js';
 
 const router = express.Router();
 
@@ -64,7 +65,7 @@ router.get('/ponto_config', async (req, res) => {
     const token = await PontoService.getValidToken().catch(() => null);
     
     res.json({
-      ...(config || { clientId: '', clientSecret: '' }),
+      ...(config || { clientId: '', clientSecret: '', maxTransactions: 500 }),
       accounts: accounts,
       isConnected: !!token
     });
@@ -76,31 +77,32 @@ router.get('/ponto_config', async (req, res) => {
 
 router.post('/ponto_config', async (req, res) => {
   try {
-    await updateSettings('ponto_config', req.body);
-    res.json({ message: 'Ponto configuration updated successfully' });
+    const { clientId, clientSecret, maxTransactions } = req.body;
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ error: 'Client ID and Client Secret are required' });
+    }
+
+    // 1. Save config first so PontoService can use it
+    await updateSettings('ponto_config', { clientId, clientSecret, maxTransactions: maxTransactions || 500 });
+
+    // 2. Try to authenticate immediately
+    console.log(`[PontoConfig] Attempting immediate authentication with new credentials`);
+    await PontoService.fetchTokenWithClientCredentials();
+
+    // 3. If authentication succeeded, sync accounts
+    console.log(`[PontoConfig] Authentication successful, syncing accounts...`);
+    await syncPontoAccountsInternal();
+
+    res.json({ message: 'Ponto configuration updated, authenticated and accounts synced' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to update Ponto config' });
+    console.error(`[PontoConfig] Error during Ponto configuration update/auth:`, err);
+    res.status(500).json({ error: `Failed to update Ponto config or authenticate: ${err.message}` });
   }
 });
 
 router.post('/ponto_sync_accounts', async (req, res) => {
   try {
-    const pontoAccounts = await PontoService.fetchAccounts();
-    const savedAccounts = [];
-    
-    for (const pa of pontoAccounts) {
-      const account = {
-        ponto_id: pa.id,
-        account_id: pa.attributes.reference, // Usually IBAN
-        name: pa.attributes.description,
-        currency: pa.attributes.currency,
-        institution_name: pa.relationships?.financialInstitution?.data?.id // Simplified
-      };
-      const saved = await upsertPontoAccount(account);
-      savedAccounts.push(saved);
-    }
-    
+    const savedAccounts = await syncPontoAccountsInternal();
     res.json(savedAccounts);
   } catch (err) {
     console.error(err);

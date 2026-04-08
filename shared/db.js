@@ -116,7 +116,7 @@ export const initDb = async () => {
         currency TEXT,
         institution_name TEXT,
         synchronized_at TIMESTAMP,
-        is_active BOOLEAN DEFAULT true
+        is_active BOOLEAN DEFAULT false
       );
     `);
 
@@ -316,13 +316,30 @@ export const getLatestTransactionDate = async (account) => {
 
 export const saveTransaction = async (tx) => {
   try {
+    const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata } = tx;
     const res = await pool.query(
       `INSERT INTO transactions (
-        date, account, name_description, counterparty, amount, currency, source, external_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (external_id) DO NOTHING
+        date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (external_id) DO UPDATE SET
+        date = EXCLUDED.date,
+        time = EXCLUDED.time,
+        amount = EXCLUDED.amount,
+        metadata = EXCLUDED.metadata
       RETURNING *`,
-      [tx.date, tx.account, tx.name_description, tx.counterparty, tx.amount, tx.currency, tx.source, tx.external_id]
+      [
+        date, 
+        time || null,
+        account, 
+        name_description, 
+        counterparty, 
+        amount, 
+        currency, 
+        type || null,
+        source, 
+        external_id,
+        metadata || {}
+      ]
     );
     return res.rows[0];
   } catch (err) {

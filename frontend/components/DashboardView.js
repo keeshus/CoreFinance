@@ -307,6 +307,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
         }} onClick={() => setSelectedTransaction(null)}>
           <div style={{
             background: '#fff', padding: '30px', borderRadius: '24px', maxWidth: '500px', width: '90%',
+            maxHeight: '90vh', overflowY: 'auto',
             boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
             display: 'flex', flexDirection: 'column', gap: '20px'
           }} onClick={e => e.stopPropagation()}>
@@ -323,7 +324,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
                 <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Description</div>
-                <div style={{ fontSize: '1em', fontWeight: 'bold', color: '#1e293b' }}>{selectedTransaction.name_description}</div>
+                <div style={{ fontSize: '1em', fontWeight: 'bold', color: '#1e293b', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{selectedTransaction.name_description}</div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
@@ -342,7 +343,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
               {selectedTransaction.counterparty && (
                 <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Counterparty</div>
-                  <div style={{ fontSize: '0.9em', color: '#1e293b' }}>{selectedTransaction.counterparty}</div>
+                  <div style={{ fontSize: '0.9em', color: '#1e293b', wordBreak: 'break-word' }}>{selectedTransaction.counterparty}</div>
                 </div>
               )}
 
@@ -383,9 +384,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                     {Object.entries(selectedTransaction.metadata).map(([key, value]) => {
                       if (!value || value === '' || key === 'rule_violations' || key === 'anomaly_reason' || key === 'is_anomalous') return null;
                       return (
-                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
-                          <span style={{ color: '#64748b', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}</span>
-                          <span style={{ color: '#1e293b', fontWeight: '500', textAlign: 'right', maxWidth: '250px' }}>{value}</span>
+                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', gap: '10px' }}>
+                          <span style={{ color: '#64748b', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{key.replace(/_/g, ' ')}</span>
+                          <span style={{ color: '#1e293b', fontWeight: '500', textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
                         </div>
                       );
                     })}

@@ -1,11 +1,11 @@
 import {
-  pool, getPontoAccounts, getLatestTransactionDate, saveTransaction,
-  updateDailyBalance, getTransactionsForBalanceCalc, createJob, updateJob,
+  getPontoAccounts, getLatestTransactionDate, saveTransaction,
+  updateDailyBalance, getTransactionsForBalanceCalc, updateJob,
   getSettings
 } from '../shared/db.js';
 import { PontoService } from '../backend/ponto.js';
 import { aiQueue } from '../backend/queue.js';
-import { format, subDays, startOfDay, endOfDay, isAfter, parseISO } from 'date-fns';
+import { format, subDays, parseISO } from 'date-fns';
 
 export async function runPontoSync(jobId) {
   try {
@@ -37,23 +37,88 @@ export async function runPontoSync(jobId) {
       
       // 2. Fetch transactions from Ponto
       // We fetch from fetchFrom to yesterdayStr
-      const pontoData = await PontoService.fetchTransactions(acc.ponto_id, {
-        from: fetchFrom,
-        to: yesterdayStr
-      });
+      const allPontoTransactions = [];
+      let nextUrl = null;
+      let pagesFetched = 0;
+      
+      const pontoConfig = await getSettings('ponto_config');
+      const maxTransactions = pontoConfig?.maxTransactions || 500;
+      const maxPages = Math.ceil(maxTransactions / 100);
+
+      do {
+        const pontoData = await PontoService.fetchTransactions(acc.ponto_id, {
+          from: fetchFrom,
+          to: yesterdayStr,
+          nextUrl: nextUrl
+        });
+
+        if (pontoData.data && pontoData.data.length > 0) {
+          allPontoTransactions.push(...pontoData.data);
+        }
+        
+        nextUrl = pontoData.links?.next;
+        pagesFetched++;
+      } while (nextUrl && pagesFetched < maxPages && allPontoTransactions.length < maxTransactions);
 
       const newTransactions = [];
-      for (const pt of pontoData.data) {
+      for (const pt of allPontoTransactions.slice(0, maxTransactions)) {
+        const attr = pt.attributes;
+        
+        // Extract time from executionDate if it's a full ISO string
+        let time = null;
+        if (attr.executionDate && attr.executionDate.includes('T')) {
+          try {
+            time = format(parseISO(attr.executionDate), 'HH:mm:ss');
+          } catch (e) {
+            // Ignore
+          }
+        }
+
+        // Clean up HTML from remittanceInformation
+        const cleanRemittance = (attr.remittanceInformation || '')
+          .replace(/<[^>]*>?/gm, '') // Strip HTML tags
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .trim();
+
+        const cleanDescription = (attr.description || '')
+          .replace(/<[^>]*>?/gm, '')
+          .trim();
+
+        const counterpartyName = attr.counterpartyName || attr.counterpartName || 'Unknown';
+        const counterpartReference = attr.counterpartyReference || attr.counterpartReference || 'Unknown';
+        
+        // Title is only the Counterpartname
+        const nameDescription = counterpartyName !== 'Unknown' 
+          ? counterpartyName 
+          : (cleanDescription || cleanRemittance || 'No description');
+
         // Map Ponto to local schema
         const tx = {
-          date: pt.attributes.valueDate,
+          date: attr.valueDate,
+          time: time,
           account: acc.account_id,
-          name_description: pt.attributes.remittanceInformation || 'No description',
-          counterparty: pt.attributes.creditorName || pt.attributes.debtorName || 'Unknown',
-          amount: parseFloat(pt.attributes.amount),
-          currency: pt.attributes.currency,
+          name_description: nameDescription,
+          counterparty: counterpartReference,
+          amount: parseFloat(attr.amount),
+          currency: attr.currency,
           source: 'ponto',
-          external_id: pt.id
+          external_id: pt.id,
+          metadata: {
+            ponto_id: pt.id,
+            remittance_information: cleanRemittance,
+            description: cleanDescription,
+            counterparty_name: counterpartyName,
+            counterparty_reference: counterpartReference,
+            currency: attr.currency,
+            amount: attr.amount,
+            value_date: attr.valueDate,
+            execution_date: attr.executionDate
+          }
         };
 
         // Strict Full-Day Policy: only save if date <= yesterday

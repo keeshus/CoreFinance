@@ -73,6 +73,7 @@ export default function SettingsView({
   const [localPontoConfig, setLocalPontoConfig] = useState({
     clientId: '',
     clientSecret: '',
+    maxTransactions: 500,
     isConnected: false,
     accounts: []
   });
@@ -200,9 +201,10 @@ export default function SettingsView({
     try {
       await onSavePontoConfig({
         clientId: localPontoConfig.clientId,
-        clientSecret: localPontoConfig.clientSecret
+        clientSecret: localPontoConfig.clientSecret,
+        maxTransactions: localPontoConfig.maxTransactions
       });
-      showNotification('Ponto Configuration saved successfully');
+      showNotification('Ponto Configuration saved and authenticated!');
     } catch (err) {
       showNotification(err.message || 'Failed to save Ponto Configuration', 'error');
     }
@@ -255,7 +257,7 @@ export default function SettingsView({
               Configure your Ponto credentials to automate bank synchronization. Get your credentials from the <a href="https://developer.myponto.com" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', textDecoration: 'underline' }}>Ponto Developer Portal</a>.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Client ID</label>
                 <input
@@ -276,6 +278,16 @@ export default function SettingsView({
                   style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
                 />
               </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <label style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#64748b' }}>Max transactions per Sync</label>
+                <input
+                  type="number"
+                  value={localPontoConfig.maxTransactions}
+                  onChange={(e) => setLocalPontoConfig({ ...localPontoConfig, maxTransactions: parseInt(e.target.value) || 0 })}
+                  placeholder="e.g. 500"
+                  style={{ padding: '10px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                />
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -290,16 +302,6 @@ export default function SettingsView({
                 <Save size={18} /> Save Credentials
               </button>
 
-              <a
-                href="/api/integrations/ponto/auth"
-                style={{
-                  padding: '10px 20px', background: localPontoConfig.isConnected ? '#10b981' : '#f59e0b', color: '#fff',
-                  textDecoration: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '8px'
-                }}
-              >
-                <RefreshCw size={18} /> {localPontoConfig.isConnected ? 'Reconnect with Ponto' : 'Authorize with Ponto'}
-              </a>
             </div>
 
             {localPontoConfig.isConnected && (

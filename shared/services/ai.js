@@ -131,7 +131,8 @@ export class AIService {
         description: t.name_description,
         counterparty: t.counterparty,
         amount: t.amount,
-        currency: t.currency
+        currency: t.currency,
+        metadata: t.metadata
       })))}
 
       ### Task:

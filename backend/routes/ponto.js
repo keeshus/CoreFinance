@@ -1,11 +1,29 @@
 import express from 'express';
 import { PontoService } from '../ponto.js';
-import { getSettings, savePontoToken, createJob } from '../db.js';
+import { getSettings, savePontoToken, createJob, upsertPontoAccount } from '../db.js';
 import { pontoQueue } from '../queue.js';
 
 const router = express.Router();
 
 const PONTO_API_URL = 'https://api.myponto.com';
+
+export async function syncPontoAccountsInternal() {
+  const pontoAccounts = await PontoService.fetchAccounts();
+  const savedAccounts = [];
+  
+  for (const pa of pontoAccounts) {
+    const account = {
+      ponto_id: pa.id,
+      account_id: pa.attributes.reference, // Usually IBAN
+      name: pa.attributes.description,
+      currency: pa.attributes.currency,
+      institution_name: pa.relationships?.financialInstitution?.data?.id // Simplified
+    };
+    const saved = await upsertPontoAccount(account);
+    savedAccounts.push(saved);
+  }
+  return savedAccounts;
+}
 
 router.get('/auth', async (req, res) => {
   try {
