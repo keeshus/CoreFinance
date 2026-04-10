@@ -2,14 +2,16 @@ import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { pool, getSettings } from '../db.js';
 
 export class AIService {
-  constructor(config) {
+  constructor(config, logger = console.log) {
     if (!config || !config.apiKey) {
       throw new Error('AI Studio configuration missing (apiKey)');
     }
 
     this.genAI = new GoogleGenerativeAI(config.apiKey);
     this.modelName = config.model || 'gemini-2.0-flash';
-    console.log(`[AIService] Initialized with model: ${this.modelName}`);
+    this.grounding = config.grounding || false;
+    this.logger = logger;
+    this.logger(`Initialized with model: ${this.modelName}, grounding: ${this.grounding}`);
   }
 
   async getModel(excludeAnomaly = false) {
@@ -52,8 +54,14 @@ export class AIService {
       required.push('is_anomalous');
     }
 
+    const tools = [];
+    if (this.grounding) {
+      tools.push({ googleSearchRetrieval: {} });
+    }
+
     return this.genAI.getGenerativeModel({
       model: this.modelName,
+      tools,
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -69,7 +77,7 @@ export class AIService {
   }
 
   async getHistoricalContext() {
-    console.log('[AIService] Fetching historical context...');
+    this.logger('Fetching historical context...');
     const start = Date.now();
     try {
       const result = await pool.query(`
@@ -86,10 +94,10 @@ export class AIService {
         ORDER BY frequency DESC
         LIMIT 100
       `);
-      console.log(`[AIService] Historical context fetched in ${Date.now() - start}ms. Found ${result.rows.length} records.`);
+      this.logger(`Historical context fetched in ${Date.now() - start}ms. Found ${result.rows.length} records.`);
       return result.rows;
     } catch (err) {
-      console.error('[AIService] Failed to fetch historical context:', err);
+      this.logger(`Failed to fetch historical context: ${err.message}`);
       return [];
     }
   }
@@ -98,6 +106,7 @@ export class AIService {
     const historicalContext = options.historicalContext || [];
     const model = await this.getModel(options.disableAnomalyDetection);
     const dbCategories = await getSettings('categories') || [];
+    const onTransactionEnriched = options.onTransactionEnriched || (async () => {});
 
     const categoryDescriptions = dbCategories.map(c => `- ${c.name}: ${c.description || ''}`).join('\n');
     const categoryNames = dbCategories.map(c => c.name).join(', ');
@@ -161,47 +170,47 @@ export class AIService {
       Return ONLY a JSON array of objects.
     `;
 
-    console.log(`[AIService] Sending request to Gemini (${this.modelName}). Prompt length: ${prompt.length}`);
-    const startCall = Date.now();
+    this.logger(`Building Gemini prompt: ${transactions.length} transactions, ${activeRules.length} active rules, ${historicalContext.length} historical insight records.`);
     
-    // 60-second timeout for the AI call
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('AI call timed out after 60s')), 60000)
-    );
-
     try {
-      const result = await Promise.race([
-        model.generateContent(prompt),
-        timeoutPromise
-      ]);
+      this.logger(`Sending request to Gemini (${this.modelName}). Prompt length: ${prompt.length} chars.`);
+      const startCall = Date.now();
       
-      console.log(`[AIService] Received response from Gemini after ${(Date.now() - startCall) / 1000}s`);
-      const response = await result.response;
-      const text = response.text();
-      console.log(`[AIService] Response text extracted. Length: ${text.length}`);
+      const result = await model.generateContent(prompt);
+      const fullText = result.response.text();
+      
+      this.logger(`Response received in ${(Date.now() - startCall) / 1000}s. Length: ${fullText.length} chars.`);
       
       try {
-        const parsed = JSON.parse(text);
-        console.log(`[AIService] Parsed JSON successfully: ${parsed.length} items`);
-        // Ensure all required fields exist even if excluded from prompt
+        const parsed = JSON.parse(fullText);
+        this.logger(`Successfully parsed ${parsed.length} items from AI response.`);
+        
+        // Call the enrichment callback for each item to maintain compatibility with worker logic
+        for (const item of parsed) {
+          const enriched = {
+            ...item,
+            is_anomalous: options.disableAnomalyDetection ? false : (item.is_anomalous || false),
+            anomaly_reason: options.disableAnomalyDetection ? '' : (item.anomaly_reason || '')
+          };
+          await onTransactionEnriched(enriched);
+        }
+
         return parsed.map(item => ({
           ...item,
           is_anomalous: options.disableAnomalyDetection ? false : (item.is_anomalous || false),
           anomaly_reason: options.disableAnomalyDetection ? '' : (item.anomaly_reason || '')
         }));
       } catch (err) {
-        console.error('[AIService] Failed to parse AI response:', text);
+        this.logger(`Failed to parse AI response: ${fullText.substring(0, 100)}...`);
         throw new Error('AI response was not valid JSON');
       }
     } catch (err) {
-      console.error(`[AIService] AI Call failed or timed out after ${(Date.now() - startCall) / 1000}s:`, err.message);
+      this.logger(`AI Call failed: ${err.message}`);
       throw err;
     }
   }
 
   static async listModels(apiKey) {
-    // Note: The GoogleGenerativeAI SDK currently doesn't have a direct listModels method
-    // in the same way as the REST API, but we can use fetch for this.
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
       const data = await response.json();

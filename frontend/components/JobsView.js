@@ -124,7 +124,7 @@ onClick={(e) => handleDelete(e, job.id)}
                fontFamily: 'monospace', fontSize: '0.8em', maxHeight: '300px', overflowY: 'auto',
                display: 'flex', flexDirection: 'column', gap: '5px'
              }}>
-               {job.logs && job.logs.map((log, idx) => (
+               {[...(job.logs || [])].reverse().map((log, idx) => (
                  <div key={idx} style={{ display: 'flex', gap: '10px' }}>
                    <span style={{ color: '#94a3b8' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
                    <span>{log.message}</span>

@@ -8,6 +8,8 @@ import uploadRoutes from './routes/upload.js';
 import rulesRoutes from './routes/rules.js';
 import jobRoutes from './routes/jobs.js';
 import pontoRoutes from './routes/ponto.js';
+import authRoutes from './routes/auth.js';
+import { authenticateToken } from './middleware/auth.js';
 import { pontoQueue } from './queue.js';
 
 const app = express();
@@ -64,12 +66,13 @@ app.get('/api/workers', (req, res) => {
   res.json(workerRegistry.getWorkers());
 });
 
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/rules', rulesRoutes);
-app.use('/api/jobs', jobRoutes);
-app.use('/api/integrations/ponto', pontoRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/transactions', authenticateToken, transactionRoutes);
+app.use('/api/settings', authenticateToken, settingsRoutes);
+app.use('/api/upload', authenticateToken, uploadRoutes);
+app.use('/api/rules', authenticateToken, rulesRoutes);
+app.use('/api/jobs', authenticateToken, jobRoutes);
+app.use('/api/integrations/ponto', authenticateToken, pontoRoutes);
 
 const startServer = async () => {
   // Start listening immediately so healthchecks pass while we initialize

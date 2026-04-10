@@ -15,7 +15,10 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
   const pollJobStatus = async (jobId) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/jobs/${jobId}`);
+        const token = localStorage.getItem('auth_token');
+        const res = await fetch(`/api/jobs/${jobId}`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
         const data = await res.json();
         setCurrentJob(data);
 
@@ -40,8 +43,10 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
     formData.append('accountId', selectedAccount);
 
     try {
+      const token = localStorage.getItem('auth_token');
       const res = await fetch('/api/upload/verify', {
         method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formData,
       });
       const data = await res.json();
@@ -161,34 +166,16 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
               <ShieldCheck size={18} />
               Analyze & Verify
             </button>
-
-            <div style={{ borderTop: '1px solid #e2e8f0', margin: '10px 0' }} />
-            
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: '0.85em', color: '#64748b', marginBottom: '15px' }}>Prefer automated sync? Connect your bank once.</p>
-              <a
-                href="/api/integrations/ponto/auth"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '10px',
-                  background: '#f8fafc', color: '#1e293b', border: '1px solid #e2e8f0',
-                  padding: '12px 24px', borderRadius: '16px', fontWeight: 'bold', textDecoration: 'none',
-                  fontSize: '0.9em', transition: 'all 0.2s'
-                }}
-              >
-                <RefreshCw size={18} color="#0284c7" />
-                Connect via Ponto API
-              </a>
-            </div>
           </div>
         )}
 
         {step === 'processing' && currentJob && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                   <span style={{ fontWeight: 800, fontSize: '1.1em' }}>AI Categorization</span>
-                   {currentJob.payload?.disableAnomalyDetection && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontWeight: 800, fontSize: '1.1em' }}>AI Processing</span>
+                    {currentJob.payload?.disableAnomalyDetection && (
                      <span style={{ 
                        background: '#eff6ff', color: '#3b82f6', padding: '2px 8px', borderRadius: '8px', 
                        fontSize: '0.7em', fontWeight: '800', border: '1px solid #dbeafe'
@@ -221,12 +208,12 @@ export default function UploadView({ file, balFile, uploading, message, onFileCh
                    fontFamily: 'monospace', fontSize: '0.8em', maxHeight: '200px', overflowY: 'auto',
                    display: 'flex', flexDirection: 'column', gap: '5px'
                  }}>
-                   {currentJob.logs && currentJob.logs.map((log, idx) => (
-                     <div key={idx} style={{ display: 'flex', gap: '10px' }}>
-                       <span style={{ color: '#94a3b8' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                       <span>{log.message}</span>
-                     </div>
-                   ))}
+                    {[...(currentJob.logs || [])].reverse().map((log, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '10px' }}>
+                        <span style={{ color: '#94a3b8' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                        <span>{log.message}</span>
+                      </div>
+                    ))}
                    {currentJob.error && (
                      <div style={{ color: '#f87171', fontWeight: 'bold', marginTop: '10px' }}>ERROR: {currentJob.error}</div>
                    )}

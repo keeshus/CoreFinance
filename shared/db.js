@@ -29,6 +29,7 @@ export const initDb = async () => {
         currency TEXT NOT NULL,
         type TEXT,
         source TEXT NOT NULL,
+        import_method TEXT,
         external_id TEXT UNIQUE,
         ai_enriched BOOLEAN DEFAULT false,
         metadata JSONB DEFAULT '{}'
@@ -77,6 +78,15 @@ export const initDb = async () => {
         worker_id TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -160,7 +170,18 @@ export const initDb = async () => {
 
 export const getTransactions = async (filters = {}) => {
   try {
-    const { page = 1, pageSize = 50, account = 'all', search = '', startDate = '', endDate = '', sortField = 'date', sortOrder = 'desc', deviationsOnly = false } = filters;
+    const { 
+      page = 1, 
+      pageSize = 50, 
+      account = 'all', 
+      search = '', 
+      startDate = '', 
+      endDate = '', 
+      sortField = 'date', 
+      sortOrder = 'desc', 
+      deviationsOnly = false,
+      category = 'all'
+    } = filters;
     const offset = (page - 1) * pageSize;
     
     let query = `
@@ -188,6 +209,12 @@ export const getTransactions = async (filters = {}) => {
     if (account !== 'all') {
       query += ` AND t.account = $${paramIdx++}`;
       params.push(account);
+    }
+
+    if (category !== 'all') {
+      const categoryArray = Array.isArray(category) ? category : [category];
+      query += ` AND t.metadata->>'ai_category' = ANY($${paramIdx++})`;
+      params.push(categoryArray);
     }
 
     if (search) {
@@ -316,15 +343,16 @@ export const getLatestTransactionDate = async (account) => {
 
 export const saveTransaction = async (tx) => {
   try {
-    const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata } = tx;
+    const { date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata } = tx;
     const res = await pool.query(
       `INSERT INTO transactions (
-        date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (external_id) DO UPDATE SET
         date = EXCLUDED.date,
         time = EXCLUDED.time,
         amount = EXCLUDED.amount,
+        import_method = EXCLUDED.import_method,
         metadata = EXCLUDED.metadata
       RETURNING *`,
       [
@@ -337,6 +365,7 @@ export const saveTransaction = async (tx) => {
         currency, 
         type || null,
         source, 
+        import_method || null,
         external_id,
         metadata || {}
       ]
@@ -377,17 +406,18 @@ export const getTransactionsForBalanceCalc = async (account, fromDate) => {
 
 export const insertTransaction = async (client, data) => {
   try {
-    const { date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata } = data;
+    const { date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata } = data;
     const res = await client.query(
-      `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (external_id) DO UPDATE SET
          date = EXCLUDED.date,
          time = EXCLUDED.time,
          amount = EXCLUDED.amount,
+         import_method = EXCLUDED.import_method,
          metadata = EXCLUDED.metadata
        RETURNING id`,
-      [date, time, account, name_description, counterparty, amount, currency, type, source, external_id, metadata || {}]
+      [date, time, account, name_description, counterparty, amount, currency, type, source, import_method || null, external_id, metadata || {}]
     );
     return res.rows[0]?.id;
   } catch (err) {
@@ -657,6 +687,7 @@ export const getTrend = async () => {
           t.metadata->>'ai_category' as category
         FROM transactions t
         JOIN account_names an ON t.account = an.account
+        WHERE t.type IS NULL OR t.type != 'INITIAL_BALANCE'
         
         UNION ALL
         
@@ -669,7 +700,7 @@ export const getTrend = async () => {
           NULL as category
         FROM daily_balances db
         JOIN account_names an ON db.account = an.account
-        WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE account = db.account AND date = db.date)
+        WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE account = db.account AND date = db.date AND (type IS NULL OR type != 'INITIAL_BALANCE'))
       )
       SELECT
         date,
@@ -725,15 +756,6 @@ export const deleteRule = async (id) => {
   }
 };
 
-export const updateRuleStatus = async (id, isActive, isProposed, name, pattern) => {
-  return updateRule(id, { 
-    is_active: isActive, 
-    is_proposed: isProposed,
-    name: name,
-    pattern: pattern
-  });
-};
-
 export const deleteAccount = async (account) => {
   try {
     await pool.query('DELETE FROM account_names WHERE account = $1', [account]);
@@ -749,7 +771,10 @@ export const getUnenrichedTransactions = async () => {
       SELECT t.* 
       FROM transactions t
       JOIN account_names an ON t.account = an.account
-      WHERE t.ai_enriched = false AND an.ai_enabled = true
+      WHERE t.ai_enriched = false 
+        AND an.ai_enabled = true
+        AND (t.type IS NULL OR t.type != 'INITIAL_BALANCE')
+        AND (t.metadata->>'ai_category' IS NULL OR t.metadata->>'ai_category' = 'Uncategorized')
     `);
     return res.rows;
   } catch (err) {

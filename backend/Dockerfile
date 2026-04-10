@@ -18,11 +18,16 @@ RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Copy only the backend and shared infra
-COPY --from=builder /app/backend ./backend
-COPY --from=builder /app/shared ./shared
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+# Create data directory and set permissions
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
+# Copy only the backend and shared infra with correct ownership
+COPY --from=builder --chown=node:node /app/backend ./backend
+COPY --from=builder --chown=node:node /app/shared ./shared
+COPY --from=builder --chown=node:node /app/package*.json ./
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+
+USER node
 
 EXPOSE 3000
 

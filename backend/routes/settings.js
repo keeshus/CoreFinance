@@ -2,11 +2,11 @@ import express from 'express';
 import {
   getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount,
   upsertAIModel, getAIModels, getUnenrichedTransactions, createJob,
-  getPontoAccounts, upsertPontoAccount, setPontoAccountStatus
+  getPontoAccounts, upsertPontoAccount, setPontoAccountStatus, getRules
 } from '../db.js';
 import { AIService } from '../../shared/services/ai.js';
 import { PontoService } from '../ponto.js';
-import { aiQueue, pontoQueue } from '../queue.js';
+import { aiQueue, pontoQueue, flowProducer } from '../queue.js';
 import { syncPontoAccountsInternal } from './ponto.js';
 
 const router = express.Router();
@@ -38,7 +38,7 @@ router.get('/ai_config', async (req, res) => {
     const models = await getAIModels();
     const unenriched = await getUnenrichedTransactions();
     res.json({
-      ...(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash' }),
+      ...(config || { enabled: false, apiKey: '', model: 'gemini-2.0-flash', grounding: false }),
       availableModels: models,
       unenrichedCount: unenriched.length
     });
@@ -183,9 +183,41 @@ router.post('/trigger-ai-enrichment', async (req, res) => {
       return acc;
     }, {});
 
-    await aiQueue.add('ai-processing', { 
-      transactions: transactions.map(t => ({ id: t.id, account: t.account, name_description: t.name_description, counterparty: t.counterparty, amount: t.amount, currency: t.currency, date: t.date })),
-      jobId 
+    const config = await getSettings('ai_config');
+    const rules = await getRules();
+    const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
+    const aiService = new AIService(config);
+    const historicalContext = await aiService.getHistoricalContext();
+
+    const chunkSize = 50;
+    const chunks = [];
+    for (let i = 0; i < transactions.length; i += chunkSize) {
+      chunks.push(transactions.slice(i, i + chunkSize));
+    }
+
+    await flowProducer.add({
+      name: 'finalize',
+      queueName: 'ai-processing',
+      data: { jobId, totalChunks: chunks.length },
+      opts: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
+      children: chunks.map((chunk, index) => ({
+        name: 'analyze-chunk',
+        queueName: 'ai-processing',
+        data: {
+          transactions: chunk,
+          jobId,
+          chunkNum: index + 1,
+          totalChunks: chunks.length,
+          historicalContext,
+          activeRules,
+          config
+        },
+        opts: { 
+          attempts: 3, 
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: true
+        }
+      }))
     });
 
     res.json({ 

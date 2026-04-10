@@ -1,11 +1,12 @@
 import {
   getPontoAccounts, getLatestTransactionDate, saveTransaction,
   updateDailyBalance, getTransactionsForBalanceCalc, updateJob,
-  getSettings
+  getSettings, getRules, createJob
 } from '../shared/db.js';
 import { PontoService } from '../backend/ponto.js';
-import { aiQueue } from '../backend/queue.js';
-import { format, subDays, parseISO } from 'date-fns';
+import { flowProducer } from '../backend/queue.js';
+import { AIService } from '../shared/services/ai.js';
+import { format, subDays, addDays, parseISO } from 'date-fns';
 
 export async function runPontoSync(jobId) {
   try {
@@ -29,14 +30,38 @@ export async function runPontoSync(jobId) {
 
       // 1. Determine handover date
       const latestTxDate = await getLatestTransactionDate(acc.account_id);
-      let fetchFrom = latestTxDate ? format(new Date(latestTxDate), 'yyyy-MM-dd') : '2000-01-01';
+      await updateJob(jobId, { log: `Latest transaction date for ${acc.account_id}: ${latestTxDate}` });
       
-      // We only want full days, so we start fetching from the day after the latest transaction
-      // or if we have no transactions, we fetch as much as possible.
-      // But the user said: "fetch only full days".
-      
+      let fetchFromDate; // The date we send to Ponto filter (ge)
+      let keepFromDate;  // The date we use for our manual filter
+      if (latestTxDate) {
+        const latestDate = typeof latestTxDate === 'string' ? parseISO(latestTxDate) : new Date(latestTxDate);
+        fetchFromDate = format(latestDate, 'yyyy-MM-dd'); // Ask Ponto from the SAME day to catch late-night UTC entries
+        keepFromDate = format(addDays(latestDate, 1), 'yyyy-MM-dd'); // But only KEEP those that fall on the NEXT day local
+      } else {
+        fetchFromDate = '2000-01-01';
+        keepFromDate = '2000-01-01';
+      }
+      await updateJob(jobId, { log: `Ponto filter ge: ${fetchFromDate}, Keeping from: ${keepFromDate}, Fetching to: ${yesterdayStr}` });
+
+      // Helper for robust date normalization to YYYY-MM-DD in Europe/Amsterdam
+      const normalizeDate = (rawDate) => {
+        if (!rawDate) return null;
+        if (!rawDate.includes('T')) return rawDate;
+        try {
+          const date = parseISO(rawDate);
+          return new Intl.DateTimeFormat('en-CA', { 
+            timeZone: 'Europe/Amsterdam', 
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit' 
+          }).format(date);
+        } catch (e) {
+          return rawDate.split('T')[0];
+        }
+      };
+
       // 2. Fetch transactions from Ponto
-      // We fetch from fetchFrom to yesterdayStr
       const allPontoTransactions = [];
       let nextUrl = null;
       let pagesFetched = 0;
@@ -45,20 +70,47 @@ export async function runPontoSync(jobId) {
       const maxTransactions = pontoConfig?.maxTransactions || 500;
       const maxPages = Math.ceil(maxTransactions / 100);
 
+      let reachedOldTransactions = false;
       do {
+        await updateJob(jobId, { log: `Fetching page ${pagesFetched + 1} from Ponto (ge: ${fetchFromDate}, le: ${yesterdayStr}, nextUrl: ${nextUrl})` });
         const pontoData = await PontoService.fetchTransactions(acc.ponto_id, {
-          from: fetchFrom,
+          from: fetchFromDate,
           to: yesterdayStr,
           nextUrl: nextUrl
         });
 
         if (pontoData.data && pontoData.data.length > 0) {
-          allPontoTransactions.push(...pontoData.data);
+          // Double check the range manually to ensure we only keep what we asked for
+          const filteredData = pontoData.data.filter(pt => {
+            const normalizedDate = normalizeDate(pt.attributes.valueDate);
+            return normalizedDate >= keepFromDate && normalizedDate <= yesterdayStr;
+          });
+
+          if (filteredData.length < pontoData.data.length) {
+            await updateJob(jobId, { log: `Filtered out ${pontoData.data.length - filteredData.length} transactions outside range ${keepFromDate} - ${yesterdayStr}` });
+          }
+
+          allPontoTransactions.push(...filteredData);
+          
+          if (filteredData.length > 0) {
+            const firstDate = normalizeDate(filteredData[0].attributes.valueDate);
+            const lastDate = normalizeDate(filteredData[filteredData.length - 1].attributes.valueDate);
+            await updateJob(jobId, { log: `Page ${pagesFetched + 1} kept ${filteredData.length} txs. Date range in kept: ${firstDate} to ${lastDate}` });
+          }
+
+          // If we received ANY transaction older than our 'keep' date, Ponto has definitely 
+          // gone past our relevant window, so we stop fetching entirely.
+          const lastNormalizedDate = normalizeDate(pontoData.data[pontoData.data.length - 1].attributes.valueDate);
+
+          if (lastNormalizedDate < fetchFromDate) {
+            reachedOldTransactions = true;
+            await updateJob(jobId, { log: `Reached transactions older than ${fetchFromDate} (${lastNormalizedDate}). Stopping fetch.` });
+          }
         }
         
         nextUrl = pontoData.links?.next;
         pagesFetched++;
-      } while (nextUrl && pagesFetched < maxPages && allPontoTransactions.length < maxTransactions);
+      } while (nextUrl && !reachedOldTransactions && pagesFetched < maxPages && allPontoTransactions.length < maxTransactions);
 
       const newTransactions = [];
       for (const pt of allPontoTransactions.slice(0, maxTransactions)) {
@@ -97,9 +149,11 @@ export async function runPontoSync(jobId) {
           ? counterpartyName 
           : (cleanDescription || cleanRemittance || 'No description');
 
+        const normalizedValueDate = normalizeDate(attr.valueDate);
+
         // Map Ponto to local schema
         const tx = {
-          date: attr.valueDate,
+          date: normalizedValueDate,
           time: time,
           account: acc.account_id,
           name_description: nameDescription,
@@ -107,6 +161,7 @@ export async function runPontoSync(jobId) {
           amount: parseFloat(attr.amount),
           currency: attr.currency,
           source: 'ponto',
+          import_method: 'ponto',
           external_id: pt.id,
           metadata: {
             ponto_id: pt.id,
@@ -137,22 +192,28 @@ export async function runPontoSync(jobId) {
       const accountDetails = await PontoService.fetchAccountDetails(acc.ponto_id);
       const currentBalance = parseFloat(accountDetails.attributes.currentBalance);
       
-      // Fetch today's transactions (in memory only)
+      // Fetch today's transactions (in memory only) to subtract from current balance
       const todayStr = format(new Date(), 'yyyy-MM-dd');
       const todayData = await PontoService.fetchTransactions(acc.ponto_id, { from: todayStr });
       
       let yesterdayEodBalance = currentBalance;
-      for (const t of todayData.data) {
-        yesterdayEodBalance -= parseFloat(t.attributes.amount);
+      if (todayData.data) {
+        for (const t of todayData.data) {
+          // Only subtract if it's ACTUALLY today local time
+          if (normalizeDate(t.attributes.valueDate) === todayStr) {
+            yesterdayEodBalance -= parseFloat(t.attributes.amount);
+          }
+        }
       }
+
+      await updateJob(jobId, { log: `Anchor: Current balance is ${currentBalance}, Today's txs subtracted. Yesterday (${yesterdayStr}) EOD balance: ${yesterdayEodBalance}` });
 
       // Save yesterday's EOD balance
       await updateDailyBalance(yesterdayStr, acc.account_id, yesterdayEodBalance);
 
       // 4. Backward reconstruction
-      // We walk backwards from yesterday to the earliest new transaction or a reasonable limit
-      let runningBalance = yesterdayEodBalance;
-      const txsForCalc = await getTransactionsForBalanceCalc(acc.account_id, '2000-01-01'); // Get all for simplicity or optimize
+      // We walk backwards from yesterday to rebuild history based on actual transactions
+      const txsForCalc = await getTransactionsForBalanceCalc(acc.account_id, '2000-01-01');
       
       // Group by date
       const byDate = {};
@@ -162,49 +223,67 @@ export async function runPontoSync(jobId) {
         byDate[d] += parseFloat(t.amount);
       });
 
-      const dates = Object.keys(byDate).sort().reverse(); // Decending
-      for (const d of dates) {
-        if (d === yesterdayStr) {
-          // Already have it from the anchor
-          runningBalance = yesterdayEodBalance;
-        } else if (d < yesterdayStr) {
-          // Balance at start of D = Balance at end of D - transactions on D
-          // Wait, Daily Balance usually means End of Day Balance.
-          // EOD(D-1) = EOD(D) - transactions(D)
-          
-          // Let's find the date immediately following 'd' in our series to subtract from
-          // Or just iterate down from yesterdayStr
-        }
-      }
-      
-      // Simplified backward reconstruction for the plan:
-      // We'll just iterate backwards from yesterday and subtract/add
+      // We'll iterate backwards from yesterday and subtract/add
       let currentDate = yesterday;
       let currentBal = yesterdayEodBalance;
       
-      // Go back 90 days or until we hit a date we already have (and trust)?
+      // Go back 90 days to ensure the graph is updated correctly
       for (let i = 0; i < 90; i++) {
         const dStr = format(currentDate, 'yyyy-MM-dd');
+        
+        // Save balance for this day
         await updateDailyBalance(dStr, acc.account_id, currentBal);
         
-        // Subtract transactions of this day to get the EOD of previous day
+        // Subtract transactions of this day to get the EOD of the PREVIOUS day
         const dayTotal = byDate[dStr] || 0;
-        currentBal -= dayTotal;
+        currentBal = Math.round((currentBal - dayTotal) * 100) / 100;
+        
         currentDate = subDays(currentDate, 1);
       }
+
+      await updateJob(jobId, { log: `Backward balance reconstruction completed for 90 days.` });
 
       // 5. Trigger AI Enrichment
       if (newTransactions.length > 0) {
         const aiConfig = await getSettings('ai_config');
         if (aiConfig && aiConfig.enabled) {
-          const txIds = newTransactions.map(t => t.id);
-          // Assuming we can chunk them and add to queue
-          await aiQueue.add('analyze-chunk', {
-            transactions: newTransactions,
-            jobId: jobId, // Reuse Ponto jobId or create new? Let's keep it simple
-            chunkNum: 1,
-            totalChunks: 1,
-            config: aiConfig
+          const aiJobId = await createJob('ai-processing', { transactionIds: newTransactions.map(t => t.id) });
+          await updateJob(jobId, { log: `Triggering separate AI enrichment job: ${aiJobId}` });
+
+          const rules = await getRules();
+          const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
+          const aiService = new AIService(aiConfig);
+          const historicalContext = await aiService.getHistoricalContext();
+
+          const chunkSize = 50;
+          const chunks = [];
+          for (let i = 0; i < newTransactions.length; i += chunkSize) {
+            chunks.push(newTransactions.slice(i, i + chunkSize));
+          }
+
+          await flowProducer.add({
+            name: 'finalize',
+            queueName: 'ai-processing',
+            data: { jobId: aiJobId, totalChunks: chunks.length },
+            opts: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
+            children: chunks.map((chunk, index) => ({
+              name: 'analyze-chunk',
+              queueName: 'ai-processing',
+              data: {
+                transactions: chunk,
+                jobId: aiJobId,
+                chunkNum: index + 1,
+                totalChunks: chunks.length,
+                historicalContext,
+                activeRules,
+                config: aiConfig
+              },
+              opts: { 
+                attempts: 3, 
+                backoff: { type: 'exponential', delay: 2000 },
+                removeOnComplete: true
+              }
+            }))
           });
         }
       }

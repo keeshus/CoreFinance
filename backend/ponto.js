@@ -101,14 +101,35 @@ export class PontoService {
     let url;
     if (nextUrl) {
       // Use the provided next URL directly for pagination
-      // Ensure it's absolute if needed, but Ponto usually provides absolute links
       url = nextUrl.startsWith('http') ? nextUrl : `${PONTO_API_URL}${nextUrl}`;
+      
+      const urlObj = new URL(url);
+      
+      // Ensure we use the correct pagination limit parameter if not present
+      if (!urlObj.searchParams.has('page[limit]')) {
+        urlObj.searchParams.set('page[limit]', '100');
+      }
+
+      // Ensure the URL has the required filters if they were passed
+      if (from && !urlObj.searchParams.has('filter[valueDate][ge]')) {
+        urlObj.searchParams.set('filter[valueDate][ge]', from);
+      }
+      if (to && !urlObj.searchParams.has('filter[valueDate][le]')) {
+        urlObj.searchParams.set('filter[valueDate][le]', to);
+      }
+      url = urlObj.toString();
     } else {
-      url = `${PONTO_API_URL}/accounts/${accountId}/transactions?limit=100`;
-      if (from) url += `&filter[valueDate][ge]=${from}`;
-      if (to) url += `&filter[valueDate][le]=${to}`;
-      if (after) url += `&after=${after}`;
+      // Ponto uses square brackets for filters which need to be encoded or handled carefully
+      const params = new URLSearchParams();
+      params.set('page[limit]', '100');
+      if (from) params.set('filter[valueDate][ge]', from);
+      if (to) params.set('filter[valueDate][le]', to);
+      if (after) params.set('page[after]', after);
+      
+      url = `${PONTO_API_URL}/accounts/${accountId}/transactions?${params.toString()}`;
     }
+
+    console.log(`[PontoService] Fetching from URL: ${url}`);
 
     const response = await fetch(url, {
       headers: {

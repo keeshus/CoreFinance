@@ -5,85 +5,117 @@ import UploadView from '../components/UploadView';
 import SettingsView from '../components/SettingsView';
 import RulesView from '../components/RulesView';
 import JobsView from '../components/JobsView';
+import { useFinanceData } from '../hooks/useFinanceData';
+import { useSettings } from '../hooks/useSettings';
+import { api } from '../services/api';
 
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  
   const [activeTab, setActiveTab] = useState('overview');
   const [file, setFile] = useState(null);
   const [balFile, setBalFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
-  const [transactions, setTransactions] = useState([]);
-  const [summary, setSummary] = useState([]);
-  const [trend, setTrend] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [rules, setRules] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [workers, setWorkers] = useState([]);
-  const [aiConfig, setAIConfig] = useState(null);
-  const [pontoConfig, setPontoConfig] = useState(null);
-  const [settings, setSettings] = useState({ own_accounts: [], account_names: [], categories: [] });
 
-  const fetchSummary = async () => {
-    try {
-      const res = await fetch('/api/transactions/summary');
-      const data = await res.json();
-      setSummary(data);
-    } catch (err) {
-      console.error('Error fetching summary:', err);
-    }
-  };
-
-  const fetchTransactions = useCallback(async (filters = {}) => {
-    try {
-      const queryParams = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value) queryParams.append(key, value);
-      });
-      const res = await fetch(`/api/transactions?${queryParams.toString()}`);
-      const data = await res.json();
-      setTransactions(data);
-    } catch (err) {
-      console.error('Error fetching transactions:', err);
+  useEffect(() => {
+    checkSetup();
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      setIsLoggedIn(true);
     }
   }, []);
 
-  const fetchTrend = async () => {
+  const checkSetup = async () => {
     try {
-      const res = await fetch('/api/transactions/trend');
+      const res = await fetch('/api/auth/setup-status');
       const data = await res.json();
-      setTrend(data.map(item => ({
-        ...item,
-        balance: parseFloat(item.balance)
-      })));
+      setNeedsSetup(data.needsSetup);
     } catch (err) {
-      console.error('Error fetching trend:', err);
+      console.error('Failed to check setup status:', err);
     }
   };
 
-  const fetchSettings = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
     try {
-      const res = await fetch('/api/settings');
+      const endpoint = needsSetup ? '/api/auth/register' : '/api/auth/login';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
       const data = await res.json();
-      setSettings(data);
       
-      const aiRes = await fetch('/api/settings/ai_config');
-      if (aiRes.ok) {
-        setAIConfig(await aiRes.json());
-      }
-
-      const pontoRes = await fetch('/api/settings/ponto_config');
-      if (pontoRes.ok) {
-        setPontoConfig(await pontoRes.json());
+      if (res.ok) {
+        if (needsSetup) {
+          // If we just registered the first user, log them in automatically
+          const loginRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const loginDataRes = await loginRes.json();
+          if (loginRes.ok) {
+            localStorage.setItem('auth_token', loginDataRes.token);
+            setIsLoggedIn(true);
+            setNeedsSetup(false);
+            refreshData();
+          }
+        } else {
+          localStorage.setItem('auth_token', data.token);
+          setIsLoggedIn(true);
+          refreshData();
+        }
+      } else {
+        setLoginError(data.error || 'Operation failed');
       }
     } catch (err) {
-      console.error('Error fetching settings:', err);
+      setLoginError('Could not connect to authentication server');
     }
   };
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    setIsLoggedIn(false);
+  };
+
+  const {
+    summary,
+    transactions,
+    trend,
+    loading,
+    fetchSummary,
+    fetchTransactions,
+    fetchTrend,
+    refreshAll,
+    totalAssets
+  } = useFinanceData();
+
+  const {
+    settings,
+    aiConfig,
+    pontoConfig,
+    fetchSettings,
+    updateAccountName,
+    deleteAccount,
+    saveCategories,
+    saveAIConfig,
+    savePontoConfig,
+    syncPontoAccounts,
+    updatePontoAccountStatus
+  } = useSettings();
 
   const fetchRules = async () => {
     try {
-      const res = await fetch('/api/rules');
-      const data = await res.json();
+      const data = await api.get('/rules');
       setRules(data);
     } catch (err) {
       console.error('Error fetching rules:', err);
@@ -92,8 +124,7 @@ export default function Home() {
 
   const fetchJobs = async () => {
     try {
-      const res = await fetch('/api/jobs');
-      const data = await res.json();
+      const data = await api.get('/jobs');
       setJobs(data);
     } catch (err) {
       console.error('Error fetching jobs:', err);
@@ -102,8 +133,7 @@ export default function Home() {
 
   const fetchWorkers = async () => {
     try {
-      const res = await fetch('/api/workers');
-      const data = await res.json();
+      const data = await api.get('/workers');
       setWorkers(data);
     } catch (err) {
       console.error('Error fetching workers:', err);
@@ -112,19 +142,16 @@ export default function Home() {
 
   const refreshData = async () => {
     if (loading) return;
-    setLoading(true);
     try {
       await Promise.all([
-        fetchSummary(), 
-        fetchTransactions(), 
-        fetchTrend(), 
-        fetchSettings(), 
-        fetchRules(), 
-        fetchJobs(), 
+        refreshAll(),
+        fetchSettings(),
+        fetchRules(),
+        fetchJobs(),
         fetchWorkers()
       ]);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
     }
   };
 
@@ -176,68 +203,56 @@ export default function Home() {
     setMessage('');
 
     try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setMessage(data.message);
-        setFile(null);
-        setBalFile(null);
-        refreshData();
-        return data; // Return data so UploadView can handle background jobs
-      } else {
-        setMessage(`Error: ${data.error}`);
-      }
+      const data = await api.upload('/upload', formData);
+      setMessage(data.message || 'Upload successful');
+      setFile(null);
+      setBalFile(null);
+      refreshData();
+      return data;
     } catch (err) {
-      setMessage('Error uploading file');
+      setMessage(`Error: ${err.message}`);
     } finally {
       setUploading(false);
     }
   };
 
-  const handleSaveAccountName = async (account, name, ai_enabled = false) => {
-    try {
-      const res = await fetch('/api/settings/account-name', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account, display_name: name, ai_enabled }),
-      });
-      if (res.ok) {
-        refreshData();
-        return true;
-      } else {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to update account');
-      }
-    } catch (err) {
-      console.error('Error updating account name:', err);
-      throw err;
+  const handleDeleteAccount = async (accountName) => {
+    if (confirm(`Are you sure you want to delete all transactions for ${accountName}?`)) {
+      await deleteAccount(accountName);
+      refreshData();
     }
   };
 
-  const handleDeleteAccount = async (account) => {
-    if (!confirm(`Are you sure you want to delete account ${account}?`)) return;
-    try {
-      const res = await fetch(`/api/settings/account/${account}`, {
-        method: 'DELETE',
-      });
-      if (res.ok) {
-        refreshData();
-        return true;
-      } else {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to delete account');
-      }
-    } catch (err) {
-      console.error('Error deleting account:', err);
-      throw err;
-    }
+  const handleSaveAccountName = async (oldName, newName) => {
+    await updateAccountName(oldName, newName);
+    refreshData();
   };
 
-  const totalAssets = summary.reduce((acc, curr) => acc + parseFloat(curr.balance), 0);
+  if (!isLoggedIn) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f8fafc' }}>
+        <form onSubmit={handleLogin} style={{ background: '#fff', padding: '40px', borderRadius: '24px', border: '1px solid #e2e8f0', width: '100%', maxWidth: '400px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
+          <h2 style={{ margin: '0 0 10px', textAlign: 'center' }}>{needsSetup ? 'Set Password' : 'Core Finance'}</h2>
+          {needsSetup && <p style={{ color: '#64748b', fontSize: '0.9em', textAlign: 'center', marginBottom: '20px' }}>Create a password to secure your finance data.</p>}
+          {loginError && <p style={{ color: '#ef4444', marginBottom: '20px', fontSize: '0.9em', textAlign: 'center' }}>{loginError}</p>}
+          <div style={{ marginBottom: '25px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9em', fontWeight: '600' }}>Password</label>
+            <input 
+              type="password" 
+              required
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+            />
+          </div>
+          <button type="submit" style={{ width: '100%', padding: '12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+            {needsSetup ? 'Enable Security' : 'Unlock'}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <AppLayout 
@@ -247,6 +262,7 @@ export default function Home() {
       accountCount={summary.length}
       loading={loading}
       onRefresh={refreshData}
+      onLogout={handleLogout}
     >
       {activeTab === 'overview' && (
         <DashboardView 
@@ -277,36 +293,24 @@ export default function Home() {
         />
       )}
 
-            {activeTab === 'rules' && (
+      {activeTab === 'rules' && (
         <RulesView 
           rules={rules}
           categories={settings.categories || []}
           onAddRule={async (name, pattern, expected_amount, amount_margin, type, category) => {
-            await fetch('/api/rules', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name, pattern, expected_amount, amount_margin, type, category })
-            });
+            await api.post('/rules', { name, pattern, expected_amount, amount_margin, type, category });
             fetchRules();
           }}
           onUpdateRuleStatus={async (id, is_active, is_proposed, name, pattern, expected_amount, amount_margin, type, category) => {
-            await fetch(`/api/rules/${id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_active, is_proposed, name, pattern, expected_amount, amount_margin, type, category })
-            });
+            await api.put(`/rules/${id}`, { is_active, is_proposed, name, pattern, expected_amount, amount_margin, type, category });
             fetchRules();
           }}
           onDeleteRule={async (id) => {
-            await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+            await api.delete(`/rules/${id}`);
             fetchRules();
           }}
           onImportRules={async (rules) => {
-            await fetch('/api/rules/import', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(rules)
-            });
+            await api.post('/rules/import', rules);
             fetchRules();
           }}
         />
@@ -323,63 +327,27 @@ export default function Home() {
           categories={settings.categories || []}
           onSaveAccountName={handleSaveAccountName} 
           onSaveCategories={async (categories) => {
-            await fetch('/api/settings/categories', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(categories)
-            });
+            await api.post('/settings/categories', categories);
             fetchSettings();
           }}
           aiConfig={aiConfig}
           onSaveAIConfig={async (config) => {
-            const res = await fetch('/api/settings/ai_config', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(config)
-            });
-            if (res.ok) {
-              fetchSettings();
-            } else {
-              const data = await res.json();
-              throw new Error(data.error || 'Failed to update AI configuration');
-            }
+            await api.post('/settings/ai_config', config);
+            fetchSettings();
           }}
           onDeleteAccount={handleDeleteAccount}
           pontoConfig={pontoConfig}
           onSavePontoConfig={async (config) => {
-            const res = await fetch('/api/settings/ponto_config', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(config)
-            });
-            if (res.ok) {
-              fetchSettings();
-            } else {
-              const data = await res.json();
-              throw new Error(data.error || 'Failed to update Ponto configuration');
-            }
+            await api.post('/settings/ponto_config', config);
+            fetchSettings();
           }}
           onSyncPontoAccounts={async () => {
-            const res = await fetch('/api/settings/ponto_sync_accounts', { method: 'POST' });
-            if (res.ok) {
-              fetchSettings();
-            } else {
-              const data = await res.json();
-              throw new Error(data.error || 'Failed to sync Ponto accounts');
-            }
+            await api.post('/settings/ponto_sync_accounts', {});
+            fetchSettings();
           }}
           onUpdatePontoAccountStatus={async (pontoId, isActive) => {
-            const res = await fetch('/api/settings/ponto_account_status', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ pontoId, isActive })
-            });
-            if (res.ok) {
-              fetchSettings();
-            } else {
-              const data = await res.json();
-              throw new Error(data.error || 'Failed to update Ponto account status');
-            }
+            await api.post('/settings/ponto_account_status', { pontoId, isActive });
+            fetchSettings();
           }}
         />
       )}

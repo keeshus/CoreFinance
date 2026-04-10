@@ -5,12 +5,13 @@ RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Copy package.json from root to get dependencies for both parts
-COPY package*.json ./
+# Copy files with correct ownership to avoid heavy chown
+COPY --chown=node:node package*.json ./
 RUN npm install
 
-# Copy the entire project to ensure shared/ is available
-COPY . .
+COPY --chown=node:node . .
+
+USER node
 
 # Run the worker from its directory
 CMD ["node", "worker/index.js"]

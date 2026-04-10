@@ -89,7 +89,10 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
 
   const handleExport = async () => {
     try {
-      const response = await fetch('/api/rules/export');
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/rules/export', {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -109,16 +112,19 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
     const file = e.target.files[0];
     if (!file) return;
 
+    // Reset the input value immediately so the same file can be selected again if it fails
+    const input = e.target;
+
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
         const rules = JSON.parse(event.target.result);
         await onImportRules(rules);
         showNotification('Rules imported successfully');
-        // Reset file input
-        e.target.value = '';
       } catch (err) {
         showNotification('Failed to import rules: ' + err.message, 'error');
+      } finally {
+        input.value = '';
       }
     };
     reader.readAsText(file);
@@ -139,17 +145,11 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
         }}>
           {notification.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle size={20} />}
           {notification.message}
-          <style jsx>{`
-            @keyframes slideIn {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-          `}</style>
         </div>
       )}
 
       {/* Header with Export/Import */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '-20px' }}>
+      <div className="rules-header" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginBottom: '-10px' }}>
         <button
           onClick={handleExport}
           style={{
@@ -158,125 +158,119 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
             fontSize: '0.9em', fontWeight: '600', cursor: 'pointer', color: '#64748b'
           }}
         >
-          <Download size={18} /> Export Rules
+          <Download size={18} /> <span className="hide-mobile">Export Rules</span>
         </button>
         <label style={{
           display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px',
           background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px',
           fontSize: '0.9em', fontWeight: '600', cursor: 'pointer', color: '#64748b'
         }}>
-          <Upload size={18} /> Import Rules
+          <Upload size={18} /> <span className="hide-mobile">Import Rules</span>
           <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
         </label>
       </div>
 
       {/* Add New Rule */}
-      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-         <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
-           <Plus size={20} color="#10b981" /> Create Natural Language Rule
+      <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <h3 style={{ margin: '0 0 20px', fontSize: '1.1em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <Plus size={20} color="#10b981" /> <span className="hide-mobile">Create Natural Language Rule</span>
+           <span className="show-mobile-only">New Smart Rule</span>
          </h3>
          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div style={{ display: 'flex', gap: '15px', marginBottom: '10px' }}>
-               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
+               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85em' }}>
                  <input type="radio" checked={newRuleType === 'validation'} onChange={() => setNewRuleType('validation')} />
-                 Validation Rule (Detect Anomalies)
+                 Validation
                </label>
-               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85em' }}>
                  <input type="radio" checked={newRuleType === 'categorization'} onChange={() => setNewRuleType('categorization')} />
-                 Categorization Rule (Assign Category)
+                 Categorization
                </label>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                 <input 
-                  placeholder="Rule Name (e.g. Car Insurance)"
+                  placeholder="Rule Name (e.g. Rent)"
                   value={newRuleName}
                   onChange={(e) => setNewRuleName(e.target.value)}
-                  style={{ flex: 1, minWidth: '200px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                  style={{ flex: '1 1 200px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9em' }}
                 />
                 <input 
-                  placeholder="Description/Pattern (e.g. All transactions to Company X)"
+                  placeholder="Pattern (e.g. contains 'Apartment')"
                   value={newRulePattern}
                   onChange={(e) => setNewRulePattern(e.target.value)}
-                  style={{ flex: 2, minWidth: '300px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+                  style={{ flex: '1 1 200px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9em' }}
                 />
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
                 {newRuleType === 'validation' ? (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                        <span style={{ fontSize: '0.9em', color: '#64748b' }}>Expected:</span>
-                        <input 
-                          type="number"
-                          placeholder="Amount"
-                          value={newExpectedAmount}
-                          onChange={(e) => setNewExpectedAmount(e.target.value)}
-                          style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
-                        />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                        <span style={{ fontSize: '0.9em', color: '#64748b' }}>Margin:</span>
-                        <input 
-                          type="number"
-                          placeholder="Margin"
-                          value={newAmountMargin}
-                          onChange={(e) => setNewAmountMargin(e.target.value)}
-                          style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
-                        />
-                    </div>
+                    <input 
+                      type="number"
+                      placeholder="Amount"
+                      value={newExpectedAmount}
+                      onChange={(e) => setNewExpectedAmount(e.target.value)}
+                      style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9em' }}
+                    />
+                    <input 
+                      type="number"
+                      placeholder="Margin"
+                      value={newAmountMargin}
+                      onChange={(e) => setNewAmountMargin(e.target.value)}
+                      style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', fontSize: '0.9em' }}
+                    />
                   </>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 2 }}>
-                      <span style={{ fontSize: '0.9em', color: '#64748b' }}>Category:</span>
-                      <select 
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', background: '#fff' }}
-                      >
-                        <option value="">Select a category...</option>
-                        {categories?.map(c => (
-                          <option key={c.name} value={c.name}>{c.name}</option>
-                        ))}
-                      </select>
-                  </div>
+                    <select 
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', background: '#fff', fontSize: '0.9em' }}
+                    >
+                      <option value="">Select Category...</option>
+                      {categories?.map(c => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
                 )}
                 <button 
                   onClick={handleAddRule}
                   disabled={newRuleType === 'categorization' && !newCategory}
                   style={{ 
-                    padding: '12px 25px', background: '#10b981', color: '#fff', border: 'none', 
-                    borderRadius: '12px', fontWeight: 'bold', cursor: (newRuleType === 'categorization' && !newCategory) ? 'not-allowed' : 'pointer',
-                    opacity: (newRuleType === 'categorization' && !newCategory) ? 0.5 : 1
+                    padding: '12px 20px', background: '#10b981', color: '#fff', border: 'none', 
+                    borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer',
+                    opacity: (newRuleType === 'categorization' && !newCategory) ? 0.5 : 1,
+                    flexShrink: 0
                   }}
                 >
-                  Add Rule
+                  Add
                 </button>
             </div>
          </div>
       </div>
 
       {/* Active Rules List */}
-      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-         <h3 style={{ margin: '0 0 25px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <h3 style={{ margin: '0 0 20px', fontSize: '1.1em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
            <ShieldCheck size={20} color="#3b82f6" /> Active Rules
          </h3>
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+         <div className="rules-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
            {activeRules.length === 0 && <p style={{ color: '#94a3b8', fontSize: '0.9em' }}>No active rules defined.</p>}
            {activeRules.map(rule => {
              const isEditing = editingRuleId === rule.id;
              return (
                <div key={rule.id} style={{ 
                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                 padding: '15px 20px', background: rule.is_active ? '#f8fafc' : '#f1f5f9', 
-                 borderRadius: '16px', border: '1px solid #f1f5f9', opacity: rule.is_active ? 1 : 0.6
+                 padding: '15px', background: rule.is_active ? '#f8fafc' : '#f1f5f9', 
+                 borderRadius: '16px', border: '1px solid #f1f5f9', opacity: rule.is_active ? 1 : 0.6,
+                 flexWrap: 'wrap', gap: '10px'
                }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <div style={{ flex: '1 1 200px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                     {isEditing ? (
                       <>
-                        <div style={{ display: 'flex', gap: '10px', marginBottom: '5px' }}>
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '5px', flexWrap: 'wrap' }}>
                           <select 
                             value={editType}
                             onChange={e => setEditType(e.target.value)}
-                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85em' }}
                           >
                             <option value="validation">Validation</option>
                             <option value="categorization">Categorization</option>
@@ -284,76 +278,69 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                           <input 
                             value={editName}
                             onChange={(e) => setEditName(e.target.value)}
-                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold' }}
+                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', fontSize: '0.85em' }}
                           />
                         </div>
                         <input 
                           value={editPattern}
                           onChange={(e) => setEditPattern(e.target.value)}
-                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9em' }}
+                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85em' }}
                         />
-                        <div style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                             {editType === 'validation' ? (
                               <>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: 1 }}>
-                                    <span style={{ fontSize: '0.8em', color: '#64748b' }}>Exp:</span>
-                                    <input 
-                                      type="number"
-                                      value={editExpectedAmount}
-                                      onChange={(e) => setEditExpectedAmount(e.target.value)}
-                                      style={{ flex: 1, padding: '5px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em' }}
-                                    />
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: 1 }}>
-                                    <span style={{ fontSize: '0.8em', color: '#64748b' }}>Marg:</span>
-                                    <input 
-                                      type="number"
-                                      value={editAmountMargin}
-                                      onChange={(e) => setEditAmountMargin(e.target.value)}
-                                      style={{ flex: 1, padding: '5px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em' }}
-                                    />
-                                </div>
+                                <input 
+                                  type="number"
+                                  placeholder="Amount"
+                                  value={editExpectedAmount}
+                                  onChange={(e) => setEditExpectedAmount(e.target.value)}
+                                  style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em' }}
+                                />
+                                <input 
+                                  type="number"
+                                  placeholder="Margin"
+                                  value={editAmountMargin}
+                                  onChange={(e) => setEditAmountMargin(e.target.value)}
+                                  style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em' }}
+                                />
                               </>
                             ) : (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: 1 }}>
-                                    <span style={{ fontSize: '0.8em', color: '#64748b' }}>Cat:</span>
-                                    <select 
-                                      value={editCategory}
-                                      onChange={(e) => setEditCategory(e.target.value)}
-                                      style={{ flex: 1, padding: '5px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em', background: '#fff' }}
-                                    >
-                                      <option value="">Select a category...</option>
-                                      {categories?.map(c => (
-                                        <option key={c.name} value={c.name}>{c.name}</option>
-                                      ))}
-                                    </select>
-                                </div>
+                                <select 
+                                  value={editCategory}
+                                  onChange={(e) => setEditCategory(e.target.value)}
+                                  style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8em', background: '#fff' }}
+                                >
+                                  <option value="">Select Category...</option>
+                                  {categories?.map(c => (
+                                    <option key={c.name} value={c.name}>{c.name}</option>
+                                  ))}
+                                </select>
                             )}
                         </div>
                       </>
                     ) : (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '0.7em', padding: '2px 6px', borderRadius: '6px', background: rule.type === 'categorization' ? '#fce7f3' : '#e0e7ff', color: rule.type === 'categorization' ? '#be185d' : '#4338ca', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                            {rule.type || 'validation'}
+                          <span style={{ fontSize: '0.6em', padding: '2px 6px', borderRadius: '6px', background: rule.type === 'categorization' ? '#fce7f3' : '#e0e7ff', color: rule.type === 'categorization' ? '#be185d' : '#4338ca', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            {rule.type || 'val'}
                           </span>
-                          <span style={{ fontWeight: 'bold', color: '#1e293b' }}>{rule.name}</span>
+                          <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '0.9em' }}>{rule.name}</span>
                         </div>
-                        <div style={{ fontSize: '0.9em', color: '#64748b' }}>{rule.pattern}</div>
+                        <div style={{ fontSize: '0.8em', color: '#64748b', wordBreak: 'break-word' }}>{rule.pattern}</div>
                         {rule.type === 'validation' && rule.expected_amount !== null && (
-                          <div style={{ fontSize: '0.8em', color: '#3b82f6', fontWeight: 'bold' }}>
-                            Expected: {rule.expected_amount} (± {rule.amount_margin || 0})
+                          <div style={{ fontSize: '0.75em', color: '#3b82f6', fontWeight: 'bold' }}>
+                            Exp: {rule.expected_amount} (± {rule.amount_margin || 0})
                           </div>
                         )}
                         {rule.type === 'categorization' && rule.category && (
-                          <div style={{ fontSize: '0.8em', color: '#10b981', fontWeight: 'bold' }}>
-                            Assigns Category: {rule.category}
+                          <div style={{ fontSize: '0.75em', color: '#10b981', fontWeight: 'bold' }}>
+                            Cat: {rule.category}
                           </div>
                         )}
                       </>
                     )}
                   </div>
-<div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                    {isEditing ? (
                      <>
                        <button 
@@ -380,21 +367,21 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                        <button 
                          onClick={() => handleUpdateStatus(rule.id, !rule.is_active, false, rule.name, rule.pattern, rule.expected_amount, rule.amount_margin, rule.type, rule.category)}
                          style={{ 
-                           padding: '8px 16px', background: rule.is_active ? '#ef4444' : '#10b981', 
-                           color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.8em', fontWeight: 'bold', cursor: 'pointer' 
+                           padding: '6px 10px', background: rule.is_active ? '#ef4444' : '#10b981', 
+                           color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer' 
                          }}
                        >
-                         {rule.is_active ? 'Disable' : 'Enable'}
+                         {rule.is_active ? 'Off' : 'On'}
                        </button>
                        <button 
                          onClick={() => handleDeleteRule(rule.id)}
-                         style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                         style={{ background: '#fee2e2', color: '#ef4444', border: 'none', padding: '8px', borderRadius: '10px', cursor: 'pointer' }}
                        >
                          <X size={16} />
                        </button>
                      </>
                    )}
-                 </div>
+                  </div>
                </div>
              );
            })}
@@ -450,6 +437,37 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
            ))}
          </div>
       </div>
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .hide-mobile {
+            display: none !important;
+          }
+          .show-mobile-only {
+            display: inline !important;
+          }
+        }
+        
+        @media (min-width: 641px) {
+          .show-mobile-only {
+            display: none !important;
+          }
+          .active-rules-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+          }
+          .rules-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+          }
+        }
+        
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

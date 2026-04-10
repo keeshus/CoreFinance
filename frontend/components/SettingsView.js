@@ -61,6 +61,7 @@ export default function SettingsView({
     enabled: false,
     apiKey: '',
     model: 'gemini-2.0-flash',
+    grounding: false,
     unenrichedCount: 0
   });
 
@@ -381,15 +382,27 @@ export default function SettingsView({
            <Sparkles size={20} color="#8b5cf6" /> Google AI Studio Configuration
          </h3>
          
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <input 
-                type="checkbox" 
-                id="ai-enabled"
-                checked={localAIConfig.enabled}
-                onChange={(e) => setLocalAIConfig({ ...localAIConfig, enabled: e.target.checked })}
-              />
-              <label htmlFor="ai-enabled" style={{ fontWeight: 'bold', color: '#1e293b' }}>Enable AI Processing (Global Toggle)</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input 
+                  type="checkbox" 
+                  id="ai-enabled"
+                  checked={localAIConfig.enabled}
+                  onChange={(e) => setLocalAIConfig({ ...localAIConfig, enabled: e.target.checked })}
+                />
+                <label htmlFor="ai-enabled" style={{ fontWeight: 'bold', color: '#1e293b' }}>Enable AI Processing (Global Toggle)</label>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input 
+                  type="checkbox" 
+                  id="ai-grounding"
+                  checked={localAIConfig.grounding}
+                  onChange={(e) => setLocalAIConfig({ ...localAIConfig, grounding: e.target.checked })}
+                />
+                <label htmlFor="ai-grounding" style={{ fontWeight: 'bold', color: '#1e293b' }}>Google Search Grounding</label>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>

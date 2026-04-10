@@ -19,10 +19,12 @@ RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# Copy built frontend assets and configuration
-COPY --from=builder /app/frontend ./frontend
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+# Copy built frontend assets and configuration with correct ownership
+COPY --from=builder --chown=node:node /app/frontend ./frontend
+COPY --from=builder --chown=node:node /app/package*.json ./
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+
+USER node
 
 EXPOSE 3000
 

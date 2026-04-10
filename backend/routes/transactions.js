@@ -5,11 +5,12 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { page, pageSize, account, search, startDate, endDate, sortField, sortOrder, deviationsOnly } = req.query;
+    const { page, pageSize, account, search, startDate, endDate, sortField, sortOrder, deviationsOnly, category } = req.query;
     const transactions = await getTransactions({
       page: parseInt(page) || 1,
       pageSize: parseInt(pageSize) || 50,
       account: account || 'all',
+      category: category || 'all',
       search: search || '',
       startDate: startDate || '',
       endDate: endDate || '',

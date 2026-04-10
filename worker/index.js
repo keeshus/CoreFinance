@@ -83,50 +83,83 @@ const worker = new Worker('ai-processing', async (job) => {
     } = job.data;
     
     try {
-      console.log(`[Worker] Starting chunk ${chunkNum}/${totalChunks} (${transactions.length} transactions) for job ${jobId}`);
+      const jobLogger = async (msg) => {
+        console.log(`[Job ${jobId}] ${msg}`);
+        await updateJob(jobId, { log: msg });
+      };
+
+      const aiService = new AIService(config, jobLogger);
       
-      // Update DB progress occasionally
-      if (chunkNum === 1 || chunkNum % 5 === 0) {
-        await updateJob(jobId, { 
-          status: 'processing',
-          progress: 10 + Math.floor((chunkNum / totalChunks) * 80), 
-          log: `Analyzing chunk ${chunkNum} of ${totalChunks}...`,
-          workerId 
-        });
-      }
+      let currentTransactions = [...transactions];
+      let enrichedIds = new Set();
+      let attempts = 0;
+      const maxAttempts = 3;
 
-      const aiService = new AIService(config);
-      const results = await aiService.processBatch(transactions, activeRules, { 
-        disableAnomalyDetection,
-        historicalContext 
-      });
+      while (currentTransactions.length > 0 && attempts < maxAttempts) {
+        attempts++;
+        if (attempts > 1) {
+          await jobLogger(`Retry attempt ${attempts}/${maxAttempts} for ${currentTransactions.length} remaining transactions...`);
+        }
 
-      console.log(`[Worker] Chunk ${chunkNum} AI call finished. Received ${results?.length} results.`);
+        const batchResults = await aiService.processBatch(currentTransactions, activeRules, { 
+          disableAnomalyDetection,
+          historicalContext,
+          onTransactionEnriched: async (enriched) => {
+            try {
+              // Ensure we use a consistent ID type (int) for deduplication
+              const numericId = parseInt(enriched.id);
+              if (isNaN(numericId)) {
+                console.error(`[Worker] Received invalid ID from AI: ${enriched.id}`);
+                return;
+              }
 
-      for (const res of results) {
-        const { id, ai_category, is_anomalous, anomaly_reason, rule_violations, proposed_rules } = res;
-        
-        await pool.query(
-          "UPDATE transactions SET metadata = metadata || $2::jsonb, ai_enriched = true WHERE id = $1",
-          [id, JSON.stringify({ ai_category, is_anomalous, anomaly_reason, rule_violations })]
-        );
+              await pool.query(
+                'UPDATE transactions SET ai_enriched = true, metadata = metadata || $1::jsonb WHERE id = $2',
+                [JSON.stringify(enriched), numericId]
+              );
+              enrichedIds.add(numericId);
+              
+              if (enriched.proposed_rules && Array.isArray(enriched.proposed_rules)) {
+                for (const rule of enriched.proposed_rules) {
+                  await addRule(rule.name, rule.description, true, rule.expected_amount, rule.amount_margin, rule.type, rule.category);
+                }
+              }
 
-        if (proposed_rules && proposed_rules.length > 0) {
-          for (const ruleObj of proposed_rules) {
-            // Distributed deduplication: check DB before adding
-            const existingRes = await pool.query(
-              "SELECT id FROM rules WHERE LOWER(name) = LOWER($1) OR LOWER(pattern) = LOWER($2)",
-              [ruleObj.name, ruleObj.description]
-            );
-
-            if (existingRes.rows.length === 0) {
-              await addRule(ruleObj.name, ruleObj.description, true, ruleObj.expected_amount, ruleObj.amount_margin, ruleObj.type || 'validation', ruleObj.category);
+              // Update progress for each item in the batch
+              const baseProgress = Math.floor(((chunkNum - 1) / totalChunks) * 100);
+              const chunkContribution = Math.floor((enrichedIds.size / transactions.length) * (100 / totalChunks));
+              const totalProgress = Math.min(99, baseProgress + chunkContribution);
+              
+              await updateJob(jobId, { 
+                status: 'processing',
+                progress: totalProgress,
+                workerId 
+              });
+            } catch (e) {
+              console.error(`[Worker] Failed to save transaction ${enriched.id}:`, e);
             }
           }
+        });
+
+        // Clean currentTransactions by filtering out what we just enriched
+        const previousCount = currentTransactions.length;
+        currentTransactions = currentTransactions.filter(t => !enrichedIds.has(parseInt(t.id)));
+        const newlyEnriched = previousCount - currentTransactions.length;
+
+        if (currentTransactions.length > 0 && attempts < maxAttempts) {
+          await jobLogger(`Chunk ${chunkNum}: Processed ${newlyEnriched} items. ${currentTransactions.length} items still remaining. Waiting before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempts));
         }
       }
-      console.log(`[Worker] Chunk ${chunkNum} fully processed.`);
-      return { chunkNum, count: transactions.length };
+
+      if (currentTransactions.length > 0) {
+        await jobLogger(`Warning: ${currentTransactions.length}/${transactions.length} transactions in this chunk were not enriched after ${maxAttempts} attempts.`);
+        if (enrichedIds.size === 0) {
+          throw new Error('No transactions were enriched in this batch after multiple attempts.');
+        }
+      }
+
+      return { processed: enrichedIds.size, total: transactions.length };
     } catch (err) {
       console.error(`[Worker] Chunk ${chunkNum} failed:`, err);
       // We don't mark the whole jobId as failed here yet, 

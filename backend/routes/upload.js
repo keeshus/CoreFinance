@@ -4,6 +4,7 @@ import { insertTransaction, upsertDailyBalance, pool, createJob, updateJob, getS
 import { parseBankCsv, parseBalanceCsv } from '../parser.js';
 import { aiQueue, flowProducer } from '../queue.js';
 import { AIService } from '../../shared/services/ai.js';
+import { toDateStr, validateBalanceMovements } from '../../shared/utils/validation.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -56,17 +57,9 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
       return res.status(400).json({ error: `No transactions found for account ${accountId} in the uploaded file.` });
     }
 
-    const toDateStr = (d) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
     // Sort and get dates
     const sortedTxs = [...filteredTxs].sort((a, b) => a.date - b.date);
     const earliestTxDate = sortedTxs[0].date;
-    const latestTxDate = sortedTxs[sortedTxs.length - 1].date;
 
     const preDay = new Date(earliestTxDate);
     preDay.setDate(preDay.getDate() - 1);
@@ -80,52 +73,17 @@ router.post('/verify', upload.fields([{ name: 'transactionFile', maxCount: 1 }, 
       });
     }
 
-    // 2. Daily cross-reference validation
-    const discrepancies = [];
     const dailyBalanceMap = filteredBalances.reduce((acc, b) => {
       acc[toDateStr(b.date)] = b.balance;
       return acc;
     }, {});
 
-    const txsByDay = sortedTxs.reduce((acc, t) => {
-      const dStr = toDateStr(t.date);
-      acc[dStr] = (acc[dStr] || 0) + t.amount;
-      return acc;
-    }, {});
+    const validation = validateBalanceMovements(sortedTxs, dailyBalanceMap, startingBalanceEntry.balance);
 
-    // Iterate through transaction days and validate balance movement
-    let currentBalance = startingBalanceEntry.balance;
-    const txDays = [...new Set(sortedTxs.map(t => toDateStr(t.date)))].sort();
-    const latestTxDateStr = toDateStr(latestTxDate);
-
-    // Sort all reported balance days to iterate through them, but only up to the last transaction date
-    const balanceDays = Object.keys(dailyBalanceMap)
-      .filter(dStr => dStr <= latestTxDateStr)
-      .sort();
-    const allDays = [...new Set([...txDays, ...balanceDays])].sort();
-
-    for (const dayStr of allDays) {
-      const dayChange = txsByDay[dayStr] || 0;
-      currentBalance = Math.round((currentBalance + dayChange) * 100) / 100;
-      
-      const reportedBalance = dailyBalanceMap[dayStr];
-      if (reportedBalance !== undefined) {
-        const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
-        if (Math.abs(currentBalance - reportedBalanceRounded) > 0.001) {
-          discrepancies.push({
-            date: dayStr,
-            expected: reportedBalance,
-            calculated: currentBalance,
-            diff: reportedBalance - currentBalance
-          });
-        }
-      }
-    }
-
-    if (discrepancies.length > 0) {
+    if (!validation.isValid) {
       return res.status(400).json({ 
         error: 'Balance validation failed. Transactions do not match balance overview.',
-        discrepancies,
+        discrepancies: validation.discrepancies,
         summary: [{
           account: accountId,
           txCount: filteredTxs.length,
@@ -163,7 +121,12 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
     return res.status(400).json({ error: 'Target account ID is required' });
   }
 
-  const importJobId = await createJob('csv_import', { accountId });
+  const transactionFile = req.files?.['transactionFile']?.[0];
+  const importJobId = await createJob('csv-import', { 
+    accountId, 
+    fileName: transactionFile?.originalname || 'unknown', 
+    disableAnomalyDetection 
+  });
 
   try {
     await updateJob(importJobId, { status: 'processing', progress: 5, log: 'Starting CSV import process...' });
@@ -196,16 +159,8 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
 
     await updateJob(importJobId, { progress: 20, log: `Parsed ${normalizedRows.length} transactions and ${dailyBalances.length} balance entries. Validating...` });
 
-    const toDateStr = (d) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
     const sortedTxsForVal = [...normalizedRows].sort((a, b) => a.date - b.date);
     const earliestTxDate = sortedTxsForVal[0].date;
-    const latestTxDate = sortedTxsForVal[sortedTxsForVal.length - 1].date;
 
     const preDay = new Date(earliestTxDate);
     preDay.setDate(preDay.getDate() - 1);
@@ -225,34 +180,12 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       return acc;
     }, {});
 
-    const txsByDay = sortedTxsForVal.reduce((acc, t) => {
-      const dStr = toDateStr(t.date);
-      acc[dStr] = (acc[dStr] || 0) + t.amount;
-      return acc;
-    }, {});
+    const validation = validateBalanceMovements(sortedTxsForVal, dailyBalanceMap, startingBalanceEntry.balance);
 
-    let validationBalance = startingBalanceEntry.balance;
-    const txDays = [...new Set(sortedTxsForVal.map(t => toDateStr(t.date)))].sort();
-    const latestTxDateStr = toDateStr(latestTxDate);
-    
-    const balanceDays = Object.keys(dailyBalanceMap)
-      .filter(dStr => dStr <= latestTxDateStr)
-      .sort();
-    const allDays = [...new Set([...txDays, ...balanceDays])].sort();
-
-    for (const dayStr of allDays) {
-      const dayChange = txsByDay[dayStr] || 0;
-      validationBalance = Math.round((validationBalance + dayChange) * 100) / 100;
-      
-      const reportedBalance = dailyBalanceMap[dayStr];
-      if (reportedBalance !== undefined) {
-        const reportedBalanceRounded = Math.round(reportedBalance * 100) / 100;
-        if (Math.abs(validationBalance - reportedBalanceRounded) > 0.001) {
-          const errorMsg = `Balance validation failed at ${dayStr}. Expected ${reportedBalanceRounded}, calculated ${validationBalance}.`;
-          await updateJob(importJobId, { status: 'failed', error: errorMsg });
-          return res.status(400).json({ error: errorMsg });
-        }
-      }
+    if (!validation.isValid) {
+      const errorMsg = `Balance validation failed at ${validation.discrepancies[0].date}. Expected ${validation.discrepancies[0].expected}, calculated ${validation.discrepancies[0].calculated}.`;
+      await updateJob(importJobId, { status: 'failed', error: errorMsg });
+      return res.status(400).json({ error: errorMsg });
     }
 
     await updateJob(importJobId, { progress: 50, log: 'Validation successful. Preparing database insertion...' });
@@ -275,6 +208,7 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
         currency: 'EUR',
         type: 'INITIAL_BALANCE',
         source: 'system',
+        import_method: 'system',
         external_id: `initial_balance_${accountId}_${preDayStr}`,
         metadata: { source: 'balance_file', anchor_type: 'pre_day', anchor_date: preDayStr }
       });
@@ -289,6 +223,7 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       }
 
       for (const row of normalizedRows) {
+        row.import_method = 'csv';
         const id = await insertTransaction(client, row);
         if (id) {
           rowIds.push(id);
@@ -316,7 +251,7 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
             chunks.push(transactionsToProcess.slice(i, i + chunkSize));
           }
 
-          aiJobId = await createJob('ai_categorization', { transactionIds: rowIds, disableAnomalyDetection });
+          aiJobId = await createJob('ai-processing', { transactionIds: rowIds, disableAnomalyDetection });
 
           await flowProducer.add({
             name: 'finalize',
