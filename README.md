@@ -75,6 +75,27 @@ To enable automated bank synchronization:
 
 ---
 
+## 💻 Development Guide
+
+If you wish to modify the application or run it in a local development environment:
+
+1. **Start the database and Valkey**:
+   ```bash
+   docker-compose up -d db valkey
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Run the services**:
+   - Backend: `npm run backend:dev`
+   - Frontend: `npm run frontend:dev`
+   - Worker: `npm run worker:dev`
+
+---
+
 ## 📂 Project Structure
 
 ```text
@@ -86,82 +107,6 @@ core-finance/
 ├── nginx/          # Reverse proxy configuration
 ├── docker-compose.yml
 └── package.json    # Monorepo scripts
-```
-
-2. **Start the application stack**:
-   ```bash
-   docker-compose up -d
-   ```
-   This command builds the frontend and backend images, initializes the PostgreSQL database, and configures the Nginx reverse proxy.
-
-3. **Access the dashboard**:
-   Open your browser and navigate to [http://localhost:8080](http://localhost:8080).
-
----
-
-## 💻 Development Guide
-
-If you wish to modify the application or run it in a local development environment:
-
-1. **Start the database only**:
-   ```bash
-   docker-compose up -d db
-   ```
-
-2. **Install dependencies**:
-   *(Requires Node.js installed locally)*
-   ```bash
-   npm install
-   ```
-
-3. **Run the Backend (with Nodemon for hot-reloading)**:
-   ```bash
-   npm run backend:dev
-   ```
-
-4. **Run the Frontend**:
-   ```bash
-   npm run frontend:dev
-   ```
-   The frontend will be available at [http://localhost:3000](http://localhost:3000) and the API at `http://localhost:3000/api`. *(Note: Port 3000 is used natively by Express; Next.js will likely bind to another available port if 3000 is taken, or you can utilize the Next.js dev server configuration).*
-
----
-
-## 🤖 Vertex AI Configuration
-
-The application is engineered to utilize Google's **Gemini Flash** models via Vertex AI for incredibly fast and cost-effective financial insights. 
-
-To enable AI features:
-1. Navigate to the **Settings** tab in the Core Finance dashboard.
-2. Enter your Google Cloud Project ID, Location (e.g., `us-central1`), Client Email, and Private Key.
-3. Toggle the desired features: Categorization, Anomaly Detection, and Smart Rules.
-4. Save the configuration. The credentials are encrypted and stored safely in your local PostgreSQL database.
-
-*To ensure cost efficiency, the backend groups hundreds of transactions into single batched prompts rather than making individual API calls, and summarizes historical data rather than passing raw context to the LLM.*
-
----
-
-## 📂 Project Structure
-
-```text
-core-finance/
-├── backend/                  # Node.js/Express API server
-│   ├── routes/               # API endpoint definitions (transactions, settings, upload, rules)
-│   ├── services/             # Core business logic (AI integration, etc.)
-│   ├── db.js                 # PostgreSQL connection and initialization
-│   ├── index.js              # Express app entry point
-│   ├── parser.js             # Robust CSV parsing logic (ING specific)
-│   └── Dockerfile            # Backend container definition
-├── frontend/                 # Next.js React frontend
-│   ├── components/           # Reusable UI components (Dashboard, Settings, Upload, etc.)
-│   ├── pages/                # Next.js page routing
-│   ├── next.config.js        # Next.js configuration
-│   └── Dockerfile            # Frontend container definition
-├── nginx/                    # Nginx reverse proxy configuration
-├── plans/                    # Documentation and architectural plans (e.g., Vertex AI integration)
-├── docker-compose.yml        # Main Docker orchestration file
-├── docker-compose.debug.yml  # Docker orchestration for debugging
-└── package.json              # Monorepo dependencies and scripts
 ```
 
 ---
