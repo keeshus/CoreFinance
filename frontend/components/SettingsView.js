@@ -748,7 +748,8 @@ export default function SettingsView({
                      style={{ 
                        padding: '8px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
                        background: acc.ai_enabled ? '#8b5cf6' : '#fff', color: acc.ai_enabled ? '#fff' : '#64748b',
-                       fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s'
+                       fontSize: '0.75em', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s',
+                       minWidth: '100px'
                      }}
                    >
                      {acc.ai_enabled ? 'Disable AI' : 'Enable AI'}

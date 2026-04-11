@@ -223,8 +223,8 @@ export default function Home() {
     }
   };
 
-  const handleSaveAccountName = async (oldName, newName) => {
-    await updateAccountName(oldName, newName);
+  const handleSaveAccountName = async (account, name, ai_enabled) => {
+    await updateAccountName(account, name, ai_enabled);
     refreshData();
   };
 
