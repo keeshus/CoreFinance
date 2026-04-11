@@ -107,9 +107,13 @@ export default function SettingsView({
     if (!localAIConfig.apiKey) return;
     setLoadingModels(true);
     try {
+      const token = localStorage.getItem('auth_token');
       const res = await fetch(`/api/settings/ai_models`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ apiKey: localAIConfig.apiKey })
       });
       if (res.ok) {
@@ -132,9 +136,13 @@ export default function SettingsView({
     setIsEnriching(true);
     setEnrichmentResult(null);
     try {
+      const token = localStorage.getItem('auth_token');
       const res = await fetch(`/api/settings/trigger-ai-enrichment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
       });
       const data = await res.json();
       setEnrichmentResult(data);
@@ -155,7 +163,13 @@ export default function SettingsView({
   const triggerManualSync = async () => {
     setIsSyncingTransactions(true);
     try {
-      const res = await fetch('/api/integrations/ponto/sync', { method: 'POST' });
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/integrations/ponto/sync', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         showNotification(`Manual sync started! (Job ID: ${data.jobId})`);

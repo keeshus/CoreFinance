@@ -13,14 +13,24 @@ export class PontoService {
 
   static async getValidToken() {
     let token = await getPontoToken();
-    if (!token) return null;
+    
+    if (!token) {
+      token = await this.fetchTokenWithClientCredentials();
+    }
 
     // Refresh if expiring in less than 5 minutes
     const now = new Date();
     const expiry = new Date(token.expires_at);
-    if (expiry.getTime() - now.getTime() < 5 * 60 * 1000) {
+    const ttl = expiry.getTime() - now.getTime();
+
+    if (ttl < 5 * 60 * 1000) {
       if (token.refresh_token) {
-        token = await this.refreshToken(token.refresh_token);
+        try {
+          token = await this.refreshToken(token.refresh_token);
+        } catch (refreshErr) {
+          console.warn(`[PontoService] Failed to refresh token, falling back to client credentials:`, refreshErr.message);
+          token = await this.fetchTokenWithClientCredentials();
+        }
       } else {
         token = await this.fetchTokenWithClientCredentials();
       }

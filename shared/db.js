@@ -207,37 +207,37 @@ export const getTransactions = async (filters = {}) => {
     }
 
     if (account !== 'all') {
-      query += ` AND t.account = \$\$paramIdx++`;
+      query += ` AND t.account = $${paramIdx++}`;
       params.push(account);
     }
 
     if (category !== 'all') {
       const categoryArray = Array.isArray(category) ? category : [category];
-      query += ` AND t.metadata->>'ai_category' = ANY(\$\$paramIdx++)`;
+      query += ` AND t.metadata->>'ai_category' = ANY($${paramIdx++})`;
       params.push(categoryArray);
     }
 
     if (search) {
-      query += ` AND (t.name_description ILIKE \$\$paramIdx OR t.counterparty ILIKE \$\$paramIdx OR COALESCE(an.display_name, t.account) ILIKE \$\$paramIdx)`;
-      params.push(`%\${search}%`);
+      query += ` AND (t.name_description ILIKE $${paramIdx} OR t.counterparty ILIKE $${paramIdx} OR COALESCE(an.display_name, t.account) ILIKE $${paramIdx})`;
+      params.push(`%${search}%`);
       paramIdx++;
     }
 
     if (startDate) {
-      query += ` AND t.date >= \$\$paramIdx++`;
+      query += ` AND t.date >= $${paramIdx++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ` AND t.date <= \$\$paramIdx++`;
+      query += ` AND t.date <= $${paramIdx++}`;
       params.push(endDate);
     }
 
     const allowedSortFields = ['date', 'amount', 'account', 'name_description', 'counterparty'];
-    const finalSortField = allowedSortFields.includes(sortField) ? `t.\${sortField}` : 't.date';
+    const finalSortField = allowedSortFields.includes(sortField) ? `t.${sortField}` : 't.date';
     const finalSortOrder = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    query += ` ORDER BY \${finalSortField} \${finalSortOrder} LIMIT \$\$paramIdx++ OFFSET \$\$paramIdx++`;
+    query += ` ORDER BY ${finalSortField} ${finalSortOrder} LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
     params.push(pageSize, offset);
 
     const res = await pool.query(query, params);

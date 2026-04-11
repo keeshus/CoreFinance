@@ -122,7 +122,10 @@ export class AIService {
       5. 'proposed_rules': Propose new rules (either validation or categorization) based on detected patterns.`;
 
     const prompt = `
-      You are a financial analysis assistant. 
+      You are a financial analysis assistant.
+      IMPORTANT: You MUST return a JSON array of objects.
+      DO NOT include markdown formatting tags like \`\`\`json or \`\`\`.
+      Return only the raw JSON.
       Analyze the following batch of recent transactions and return a JSON array.
       
       ${options.disableAnomalyDetection ? '' : `### Historical Context (Normal Behavior):\n${JSON.stringify(historicalContext)}`}
@@ -176,13 +179,25 @@ export class AIService {
       this.logger(`Sending request to Gemini (${this.modelName}). Prompt length: ${prompt.length} chars.`);
       const startCall = Date.now();
       
-      const result = await model.generateContent(prompt);
+      // Use AbortController for a 120s timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      
+      let result;
+      try {
+        result = await model.generateContent(prompt, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      
       const fullText = result.response.text();
       
       this.logger(`Response received in ${(Date.now() - startCall) / 1000}s. Length: ${fullText.length} chars.`);
       
       try {
-        const parsed = JSON.parse(fullText);
+        // Clean up markdown code blocks if the model included them despite instructions
+        const cleanText = fullText.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+        const parsed = JSON.parse(cleanText);
         this.logger(`Successfully parsed ${parsed.length} items from AI response.`);
         
         // Call the enrichment callback for each item to maintain compatibility with worker logic
