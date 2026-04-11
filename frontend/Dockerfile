@@ -1,32 +1,38 @@
-# Build stage
+# Stage 1: Build
 FROM node:25-alpine AS builder
-
 WORKDIR /app
 
-# Copy package.json from root
+# Copy workspace configs
 COPY package*.json ./
-RUN npm install
+COPY frontend/package*.json ./frontend/
+# Install build dependencies
+RUN npm install -w frontend && \
+    npm cache clean --force
 
-# Copy everything and build
-COPY . .
-RUN npm run frontend:build
+# Copy source and build
+COPY frontend/ ./frontend/
+# Disable Next.js telemetry during build
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build -w frontend
 
-# Production stage
+# Stage 2: Production
 FROM node:25-alpine
-
-# Install curl for troubleshooting/consistency
-RUN apk add --no-cache curl
-
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
-# Copy built frontend assets and configuration with correct ownership
-COPY --from=builder --chown=node:node /app/frontend ./frontend
-COPY --from=builder --chown=node:node /app/package*.json ./
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+# Install curl for healthcheck and tini
+RUN apk add --no-cache curl tini
+
+# Copy only necessary files for production
+COPY --from=builder /app/frontend/.next ./frontend/.next
+COPY --from=builder /app/frontend/package*.json ./frontend/
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
 
 USER node
-
 EXPOSE 3000
 
-# Run frontend production server
+# Use tini for signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["npm", "run", "frontend:start"]

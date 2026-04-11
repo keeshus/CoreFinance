@@ -1,35 +1,36 @@
-# Build stage
+# Stage 1: Build
 FROM node:25-alpine AS builder
-
 WORKDIR /app
 
-# Copy package.json from root
+# Copy package manifests
 COPY package*.json ./
-RUN npm install
+COPY backend/package*.json ./backend/
+COPY shared/ ./shared/
 
-# Copy everything
-COPY . .
+# Install ONLY production dependencies for the backend
+RUN npm install -w backend --omit=dev && \
+    npm cache clean --force
 
-# Production stage
+# Stage 2: Production
 FROM node:25-alpine
-
-# Install curl for healthcheck
-RUN apk add --no-cache curl
-
+# Set production environment
+ENV NODE_ENV=production
 WORKDIR /app
 
-# Create data directory and set permissions
-RUN mkdir -p /app/data && chown -R node:node /app/data
+# Install curl for healthcheck and tini for init
+RUN apk add --no-cache curl tini
 
-# Copy only the backend and shared infra with correct ownership
-COPY --from=builder --chown=node:node /app/backend ./backend
-COPY --from=builder --chown=node:node /app/shared ./shared
-COPY --from=builder --chown=node:node /app/package*.json ./
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+# Copy backend code and shared infra (Read-Only by default)
+COPY backend/ ./backend/
+COPY shared/ ./shared/
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+# Copy package manifests for workspace resolution
+COPY package*.json ./
 
 USER node
-
 EXPOSE 3000
 
-# Run backend
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "backend/index.js"]

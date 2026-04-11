@@ -2,34 +2,20 @@
   "name": "core-finance",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "backend",
+    "worker",
+    "frontend"
+  ],
   "scripts": {
     "dev": "concurrently -k -p \"[{name}]\" -n \"backend,worker,frontend\" -c \"blue,green,magenta\" \"npm run backend:dev\" \"wait-on http://localhost:3000 && npm run worker:dev\" \"wait-on http://localhost:3000 && npm run frontend:dev\"",
-    "backend": "node backend/index.js",
+    "backend": "npm run start -w backend",
     "backend:dev": "nodemon --env-file=.env backend/index.js",
-    "worker": "node --env-file=.env worker/index.js",
+    "worker": "npm run start -w worker",
     "worker:dev": "nodemon --env-file=.env worker/index.js",
-    "frontend:dev": "next dev frontend",
-    "frontend:build": "next build frontend",
-    "frontend:start": "next start frontend -H 0.0.0.0"
-  },
-  "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "bcryptjs": "^3.0.3",
-    "bullmq": "^5.73.2",
-    "cors": "^2.8.6",
-    "csv-parse": "^6.2.1",
-    "date-fns": "^4.1.0",
-    "express": "^5.2.1",
-    "ioredis": "^5.10.1",
-    "jsonwebtoken": "^9.0.3",
-    "lucide-react": "^1.8.0",
-    "multer": "^2.1.1",
-    "next": "^16.2.3",
-    "pg": "^8.20.0",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "recharts": "^3.8.1",
-    "uuid": "^13.0.0"
+    "frontend:dev": "npm run dev -w frontend",
+    "frontend:build": "npm run build -w frontend",
+    "frontend:start": "npm run start -w frontend -- -H 0.0.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

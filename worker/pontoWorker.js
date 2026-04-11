@@ -3,8 +3,8 @@ import {
   updateDailyBalance, getTransactionsForBalanceCalc, updateJob,
   getSettings, getRules, createJob
 } from '../shared/db.js';
-import { PontoService } from '../backend/ponto.js';
-import { flowProducer } from '../backend/queue.js';
+import { PontoService } from '../shared/ponto.js';
+import { flowProducer } from '../shared/queue.js';
 import { AIService } from '../shared/services/ai.js';
 import { format, subDays, addDays, parseISO } from 'date-fns';
 

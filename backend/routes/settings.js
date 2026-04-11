@@ -3,10 +3,10 @@ import {
   getAccountNames, setAccountName, getSettings, updateSettings, deleteAccount,
   upsertAIModel, getAIModels, getUnenrichedTransactions, createJob,
   getPontoAccounts, upsertPontoAccount, setPontoAccountStatus, getRules
-} from '../db.js';
+} from '../../shared/db.js';
 import { AIService } from '../../shared/services/ai.js';
-import { PontoService } from '../ponto.js';
-import { aiQueue, pontoQueue, flowProducer } from '../queue.js';
+import { PontoService } from '../../shared/ponto.js';
+import { aiQueue, pontoQueue, flowProducer } from '../../shared/queue.js';
 import { syncPontoAccountsInternal } from './ponto.js';
 
 const router = express.Router();

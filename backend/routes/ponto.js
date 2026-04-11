@@ -1,7 +1,7 @@
 import express from 'express';
-import { PontoService } from '../ponto.js';
-import { getSettings, savePontoToken, createJob, upsertPontoAccount } from '../db.js';
-import { pontoQueue } from '../queue.js';
+import { PontoService } from '../../shared/ponto.js';
+import { getSettings, savePontoToken, createJob, upsertPontoAccount } from '../../shared/db.js';
+import { pontoQueue } from '../../shared/queue.js';
 
 const router = express.Router();
 

@@ -1,8 +1,8 @@
 import express from 'express';
 import multer from 'multer';
-import { insertTransaction, upsertDailyBalance, pool, createJob, updateJob, getSettings, getRules } from '../db.js';
-import { parseBankCsv, parseBalanceCsv } from '../parser.js';
-import { aiQueue, flowProducer } from '../queue.js';
+import { insertTransaction, upsertDailyBalance, pool, createJob, updateJob, getSettings, getRules } from '../../shared/db.js';
+import { parseBankCsv, parseBalanceCsv } from '../../shared/parser.js';
+import { aiQueue, flowProducer } from '../../shared/queue.js';
 import { AIService } from '../../shared/services/ai.js';
 import { toDateStr, validateBalanceMovements } from '../../shared/utils/validation.js';
 

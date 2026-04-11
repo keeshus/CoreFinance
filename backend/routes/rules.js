@@ -1,5 +1,5 @@
 import express from 'express';
-import { getRules, addRule, updateRule, deleteRule } from '../db.js';
+import { getRules, addRule, updateRule, deleteRule } from '../../shared/db.js';
 
 const router = express.Router();
 

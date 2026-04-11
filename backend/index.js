@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import { initDb, pool } from './db.js';
-import { workerRegistry } from './workerRegistry.js';
+import helmet from 'helmet';
+import { initDb, pool } from '../shared/db.js';
+import { workerRegistry } from '../shared/workerRegistry.js';
 import transactionRoutes from './routes/transactions.js';
 import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/upload.js';
@@ -10,9 +11,10 @@ import jobRoutes from './routes/jobs.js';
 import pontoRoutes from './routes/ponto.js';
 import authRoutes from './routes/auth.js';
 import { authenticateToken } from './middleware/auth.js';
-import { pontoQueue } from './queue.js';
+import { pontoQueue } from '../shared/queue.js';
 
 const app = express();
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 const port = 3000;

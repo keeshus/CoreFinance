@@ -1,5 +1,10 @@
-node_modules
-npm-debug.log
-.idea
 .git
-data/
+.env
+node_modules
+**/node_modules
+*.log
+.next
+.kilo
+.kilocode
+.opencode
+docker-compose.override.yml

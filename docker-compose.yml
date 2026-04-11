@@ -2,6 +2,15 @@ services:
   nginx:
     container_name: core-finance-nginx
     image: nginx:alpine
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
     ports:
       - "8080:80"
       - "8443:443"
@@ -22,6 +31,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - DATABASE_URL=${DOCKER_DATABASE_URL}
       - VALKEY_URL=${DOCKER_VALKEY_URL}
@@ -44,6 +57,10 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - DATABASE_URL=${DOCKER_DATABASE_URL}
       - VALKEY_URL=${DOCKER_VALKEY_URL}
@@ -72,6 +89,10 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       - NEXT_TELEMETRY_DISABLED=1
     depends_on:

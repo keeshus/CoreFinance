@@ -207,29 +207,29 @@ export const getTransactions = async (filters = {}) => {
     }
 
     if (account !== 'all') {
-      query += ` AND t.account = $${paramIdx++}`;
+      query += ` AND t.account = $$paramIdx++`;
       params.push(account);
     }
 
     if (category !== 'all') {
       const categoryArray = Array.isArray(category) ? category : [category];
-      query += ` AND t.metadata->>'ai_category' = ANY($${paramIdx++})`;
+      query += ` AND t.metadata->>'ai_category' = ANY($$paramIdx++)`;
       params.push(categoryArray);
     }
 
     if (search) {
-      query += ` AND (t.name_description ILIKE $${paramIdx} OR t.counterparty ILIKE $${paramIdx} OR COALESCE(an.display_name, t.account) ILIKE $${paramIdx})`;
+      query += ` AND (t.name_description ILIKE $$paramIdx OR t.counterparty ILIKE $$paramIdx OR COALESCE(an.display_name, t.account) ILIKE $$paramIdx)`;
       params.push(`%${search}%`);
       paramIdx++;
     }
 
     if (startDate) {
-      query += ` AND t.date >= $${paramIdx++}`;
+      query += ` AND t.date >= $$paramIdx++`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ` AND t.date <= $${paramIdx++}`;
+      query += ` AND t.date <= $$paramIdx++`;
       params.push(endDate);
     }
 
@@ -237,7 +237,7 @@ export const getTransactions = async (filters = {}) => {
     const finalSortField = allowedSortFields.includes(sortField) ? `t.${sortField}` : 't.date';
     const finalSortOrder = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    query += ` ORDER BY ${finalSortField} ${finalSortOrder} LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+    query += ` ORDER BY ${finalSortField} ${finalSortOrder} LIMIT $$paramIdx++ OFFSET $$paramIdx++`;
     params.push(pageSize, offset);
 
     const res = await pool.query(query, params);
@@ -490,10 +490,6 @@ export const updateRule = async (id, updates) => {
   try {
     const { name, pattern, is_active, is_proposed, expected_amount, amount_margin, type, category } = updates;
     
-    // If name or pattern are not provided, we should fetch current ones or only update provided fields
-    // But based on current usage, we are calling it with { is_active, is_proposed }
-    // Let's make it more robust by only updating what is provided
-    
     let query = 'UPDATE rules SET ';
     const params = [];
     const setClauses = [];
@@ -555,7 +551,7 @@ export const getAccountNames = async () => {
   }
 };
 
-const updateAccountName = async (account, displayName, aiEnabled) => {
+export const setAccountName = async (account, displayName, aiEnabled) => {
   try {
     const res = await pool.query(
       'INSERT INTO account_names (account, display_name, ai_enabled) VALUES ($1, $2, $3) ON CONFLICT (account) DO UPDATE SET display_name = $2, ai_enabled = $3 RETURNING *',
@@ -565,6 +561,23 @@ const updateAccountName = async (account, displayName, aiEnabled) => {
   } catch (err) {
     console.error(`Error updating account name ${account}:`, err);
     throw err;
+  }
+};
+
+export const deleteAccount = async (account) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM transactions WHERE account = $1', [account]);
+    await client.query('DELETE FROM daily_balances WHERE account = $1', [account]);
+    await client.query('DELETE FROM account_names WHERE account = $1', [account]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(`Error deleting account ${account}:`, err);
+    throw err;
+  } finally {
+    client.release();
   }
 };
 
@@ -721,13 +734,18 @@ export const getTrend = async () => {
   }
 };
 
-export const getAIModels = async () => {
+export const getUnenrichedTransactions = async () => {
   try {
-    const res = await pool.query('SELECT * FROM ai_models ORDER BY updated_at DESC');
+    const res = await pool.query(`
+      SELECT t.* 
+      FROM transactions t
+      JOIN account_names an ON t.account = an.account
+      WHERE t.ai_enriched = false AND an.ai_enabled = true
+    `);
     return res.rows;
   } catch (err) {
-    console.error('Error fetching AI models:', err);
-    return [];
+    console.error('Error fetching unenriched transactions:', err);
+    throw err;
   }
 };
 
@@ -738,47 +756,18 @@ export const upsertAIModel = async (name, displayName, description) => {
       [name, displayName, description]
     );
   } catch (err) {
-    console.error(`Error upserting AI model ${name}:`, err);
+    console.error('Error upserting AI model:', err);
     throw err;
   }
 };
 
-export const setAccountName = async (account, displayName, aiEnabled) => {
-  return updateAccountName(account, displayName, aiEnabled);
-};
-
-export const deleteRule = async (id) => {
+export const getAIModels = async () => {
   try {
-    await pool.query('DELETE FROM rules WHERE id = $1', [id]);
-  } catch (err) {
-    console.error(`Error deleting rule ${id}:`, err);
-    throw err;
-  }
-};
-
-export const deleteAccount = async (account) => {
-  try {
-    await pool.query('DELETE FROM account_names WHERE account = $1', [account]);
-  } catch (err) {
-    console.error(`Error deleting account ${account}:`, err);
-    throw err;
-  }
-};
-
-export const getUnenrichedTransactions = async () => {
-  try {
-    const res = await pool.query(`
-      SELECT t.* 
-      FROM transactions t
-      JOIN account_names an ON t.account = an.account
-      WHERE t.ai_enriched = false 
-        AND an.ai_enabled = true
-        AND (t.type IS NULL OR t.type != 'INITIAL_BALANCE')
-        AND (t.metadata->>'ai_category' IS NULL OR t.metadata->>'ai_category' = 'Uncategorized')
-    `);
+    const res = await pool.query('SELECT * FROM ai_models ORDER BY display_name ASC');
     return res.rows;
   } catch (err) {
-    console.error('Error fetching unenriched transactions:', err);
-    throw err;
+    console.error('Error fetching AI models:', err);
+    return [];
   }
 };
+

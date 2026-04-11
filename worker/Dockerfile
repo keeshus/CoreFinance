@@ -1,17 +1,32 @@
-FROM node:22-alpine
-
-# Install curl for troubleshooting/consistency
-RUN apk add --no-cache curl
-
+# Stage 1: Build
+FROM node:25-alpine AS builder
 WORKDIR /app
 
-# Copy files with correct ownership to avoid heavy chown
-COPY --chown=node:node package*.json ./
-RUN npm install
+# Copy manifests
+COPY package*.json ./
+COPY worker/package*.json ./worker/
+COPY shared/ ./shared/
 
-COPY --chown=node:node . .
+# Install production dependencies
+RUN npm install -w worker --omit=dev && \
+    npm cache clean --force
+
+# Stage 2: Production
+FROM node:25-alpine
+ENV NODE_ENV=production
+WORKDIR /app
+
+# Install tini
+RUN apk add --no-cache tini
+
+# Copy worker and shared logic
+COPY worker/ ./worker/
+COPY shared/ ./shared/
+COPY --from=builder /app/node_modules ./node_modules
+COPY package*.json ./
 
 USER node
 
-# Run the worker from its directory
+# Use tini for signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "worker/index.js"]

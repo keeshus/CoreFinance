@@ -1,6 +1,6 @@
 import express from 'express';
-import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob } from '../db.js';
-import { aiQueue } from '../queue.js';
+import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob } from '../../shared/db.js';
+import { aiQueue } from '../../shared/queue.js';
 
 const router = express.Router();
 

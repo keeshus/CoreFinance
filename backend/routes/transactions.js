@@ -1,5 +1,5 @@
 import express from 'express';
-import { getTransactions, getSummary, getTrend } from '../db.js';
+import { getTransactions, getSummary, getTrend } from '../../shared/db.js';
 
 const router = express.Router();
 
