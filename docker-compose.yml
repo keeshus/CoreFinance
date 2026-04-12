@@ -28,9 +28,7 @@ services:
 
   backend:
     container_name: core-finance-backend
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ghcr.io/keeshus/core-finance-backend:latest
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -54,9 +52,7 @@ services:
 
   worker:
     container_name: core-finance-worker
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
+    image: ghcr.io/keeshus/core-finance-worker:latest
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -86,9 +82,7 @@ services:
   frontend:
 
     container_name: core-finance-frontend
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
+    image: ghcr.io/keeshus/core-finance-frontend:latest
     security_opt:
       - no-new-privileges:true
     cap_drop:
