@@ -25,8 +25,11 @@ const request = async (endpoint, options = {}) => {
 
   if (response.status === 401 || response.status === 403) {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      window.location.reload();
+      const currentToken = localStorage.getItem('auth_token');
+      if (currentToken) {
+        localStorage.removeItem('auth_token');
+        window.location.reload();
+      }
     }
   }
 

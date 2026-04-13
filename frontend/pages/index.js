@@ -156,8 +156,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    refreshData();
-  }, []);
+    if (isLoggedIn) {
+      refreshData();
+    }
+  }, [isLoggedIn]);
 
   useEffect(() => {
     switch (activeTab) {
