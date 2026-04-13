@@ -614,9 +614,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                     onClick={() => setShowCategoryDropdown(false)} 
                   />
                     <div className="category-dropdown" style={{
-                    position: 'absolute', bottom: '100%', right: 0, marginBottom: '8px',
+                    position: 'absolute', top: '100%', right: 0, marginTop: '8px',
                     background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px',
-                    boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 999,
+                    boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 1001,
                     minWidth: '240px', maxHeight: '60vh', overflowY: 'auto', padding: '8px'
                   }}>
 

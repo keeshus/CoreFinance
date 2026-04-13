@@ -107,26 +107,12 @@ export default function SettingsView({
     if (!localAIConfig.apiKey) return;
     setLoadingModels(true);
     try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/settings/ai_models`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ apiKey: localAIConfig.apiKey })
-      });
-      if (res.ok) {
-        const models = await res.json();
-        setAvailableModels(models);
-        showNotification(`Successfully fetched ${models.length} models`);
-      } else {
-        const errData = await res.json();
-        showNotification(errData.error || 'Failed to fetch models', 'error');
-      }
+      const models = await api.post('/settings/ai_models', { apiKey: localAIConfig.apiKey });
+      setAvailableModels(models);
+      showNotification(`Successfully fetched ${models.length} models`);
     } catch (err) {
       console.error('Failed to fetch models:', err);
-      showNotification('Failed to fetch models', 'error');
+      showNotification(err.message || 'Failed to fetch models', 'error');
     } finally {
       setLoadingModels(false);
     }
@@ -136,25 +122,13 @@ export default function SettingsView({
     setIsEnriching(true);
     setEnrichmentResult(null);
     try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`/api/settings/trigger-ai-enrichment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
+      const data = await api.post('/settings/trigger-ai-enrichment', {});
       setEnrichmentResult(data);
-      if (res.ok) {
-        showNotification(data.message || 'AI enrichment job started');
-      } else {
-        showNotification(data.error || 'Failed to trigger AI enrichment', 'error');
-      }
+      showNotification(data.message || 'AI enrichment job started');
     } catch (err) {
       console.error('Failed to trigger AI enrichment:', err);
       setEnrichmentResult({ error: 'Failed to trigger AI enrichment' });
-      showNotification('Failed to trigger AI enrichment', 'error');
+      showNotification(err.message || 'Failed to trigger AI enrichment', 'error');
     } finally {
       setIsEnriching(false);
     }
@@ -163,22 +137,10 @@ export default function SettingsView({
   const triggerManualSync = async () => {
     setIsSyncingTransactions(true);
     try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/integrations/ponto/sync', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        showNotification(`Manual sync started! (Job ID: ${data.jobId})`);
-      } else {
-        const err = await res.json();
-        showNotification(err.error || 'Failed to start sync', 'error');
-      }
+      const data = await api.post('/integrations/ponto/sync', {});
+      showNotification(`Manual sync started! (Job ID: ${data.jobId})`);
     } catch (err) {
-      showNotification('Failed to connect to server', 'error');
+      showNotification(err.message || 'Failed to start sync', 'error');
     } finally {
       setIsSyncingTransactions(false);
     }

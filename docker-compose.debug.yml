@@ -1,0 +1,116 @@
+services:
+  nginx:
+    container_name: core-finance-nginx
+    image: nginx:alpine
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
+    ports:
+      - "8080:80"
+      - "8443:443"
+    environment:
+      - DOMAIN_NAME=localhost
+    entrypoint: /etc/nginx/entrypoint.sh nginx -g "daemon off;"
+    volumes:
+      - ./nginx/templates-available:/etc/nginx/templates-available:ro
+      - ./nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+
+  backend:
+    container_name: core-finance-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      - DATABASE_URL=${DOCKER_DATABASE_URL}
+      - VALKEY_URL=${DOCKER_VALKEY_URL}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_started
+      valkey:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  worker:
+    container_name: core-finance-worker
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      - DATABASE_URL=${DOCKER_DATABASE_URL}
+      - VALKEY_URL=${DOCKER_VALKEY_URL}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - BACKEND_URL=http://backend:3000
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_started
+      valkey:
+        condition: service_started
+    restart: always
+
+  valkey:
+    container_name: core-finance-valkey
+    image: valkey/valkey:alpine
+    command: valkey-server --save 60 1 --loglevel warning
+    volumes:
+      - core-finance-valkey-data:/data
+    restart: always
+
+  frontend:
+    container_name: core-finance-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+    depends_on:
+      - backend
+    restart: always
+
+  db:
+    container_name: core-finance-db
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - core-finance-db-data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  core-finance-db-data:
+    name: core-finance-db-data
+  core-finance-valkey-data:
+    name: core-finance-valkey-data

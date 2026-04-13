@@ -23,11 +23,10 @@ const request = async (endpoint, options = {}) => {
     headers,
   });
 
-  if (response.status === 401) {
-    // Handle unauthorized - maybe redirect to login or clear token
+  if (response.status === 401 || response.status === 403) {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('auth_token');
-      // window.location.href = '/login';
+      window.location.reload();
     }
   }
 

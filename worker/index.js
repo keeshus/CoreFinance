@@ -101,45 +101,53 @@ const worker = new Worker('ai-processing', async (job) => {
           await jobLogger(`Retry attempt ${attempts}/${maxAttempts} for ${currentTransactions.length} remaining transactions...`);
         }
 
-        const batchResults = await aiService.processBatch(currentTransactions, activeRules, { 
-          disableAnomalyDetection,
-          historicalContext,
-          onTransactionEnriched: async (enriched) => {
-            try {
-              // Ensure we use a consistent ID type (int) for deduplication
-              const numericId = parseInt(enriched.id);
-              if (isNaN(numericId)) {
-                console.error(`[Worker] Received invalid ID from AI: ${enriched.id}`);
-                return;
-              }
-
-              await pool.query(
-                'UPDATE transactions SET ai_enriched = true, metadata = metadata || $1::jsonb WHERE id = $2',
-                [JSON.stringify(enriched), numericId]
-              );
-              enrichedIds.add(numericId);
-              
-              if (enriched.proposed_rules && Array.isArray(enriched.proposed_rules)) {
-                for (const rule of enriched.proposed_rules) {
-                  await addRule(rule.name, rule.description, true, rule.expected_amount, rule.amount_margin, rule.type, rule.category);
+        try {
+          const batchResults = await aiService.processBatch(currentTransactions, activeRules, { 
+            disableAnomalyDetection,
+            historicalContext,
+            onTransactionEnriched: async (enriched) => {
+              try {
+                // Ensure we use a consistent ID type (int) for deduplication
+                const numericId = parseInt(enriched.id);
+                if (isNaN(numericId)) {
+                  console.error(`[Worker] Received invalid ID from AI: ${enriched.id}`);
+                  return;
                 }
-              }
 
-              // Update progress for each item in the batch
-              const baseProgress = Math.floor(((chunkNum - 1) / totalChunks) * 100);
-              const chunkContribution = Math.floor((enrichedIds.size / transactions.length) * (100 / totalChunks));
-              const totalProgress = Math.min(99, baseProgress + chunkContribution);
-              
-              await updateJob(jobId, { 
-                status: 'processing',
-                progress: totalProgress,
-                workerId 
-              });
-            } catch (e) {
-              console.error(`[Worker] Failed to save transaction ${enriched.id}:`, e);
+                await pool.query(
+                  'UPDATE transactions SET ai_enriched = true, metadata = metadata || $1::jsonb WHERE id = $2',
+                  [JSON.stringify(enriched), numericId]
+                );
+                enrichedIds.add(numericId);
+                
+                if (enriched.proposed_rules && Array.isArray(enriched.proposed_rules)) {
+                  for (const rule of enriched.proposed_rules) {
+                    await addRule(rule.name, rule.description, true, rule.expected_amount, rule.amount_margin, rule.type, rule.category);
+                  }
+                }
+
+                // Update progress for each item in the batch
+                const baseProgress = Math.floor(((chunkNum - 1) / totalChunks) * 100);
+                const chunkContribution = Math.floor((enrichedIds.size / transactions.length) * (100 / totalChunks));
+                const totalProgress = Math.min(99, baseProgress + chunkContribution);
+                
+                await updateJob(jobId, { 
+                  status: 'processing',
+                  progress: totalProgress,
+                  workerId 
+                });
+              } catch (e) {
+                console.error(`[Worker] Failed to save transaction ${enriched.id}:`, e);
+              }
             }
+          });
+        } catch (batchErr) {
+          await jobLogger(`Gemini error in attempt ${attempts}: ${batchErr.message}`);
+          if (attempts >= maxAttempts) {
+            throw batchErr;
           }
-        });
+          // Continue to next while iteration for retry
+        }
 
         // Clean currentTransactions by filtering out what we just enriched
         const previousCount = currentTransactions.length;

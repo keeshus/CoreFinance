@@ -1,6 +1,6 @@
 import express from 'express';
 import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob } from '../../shared/db.js';
-import { aiQueue } from '../../shared/queue.js';
+import { aiQueue, pontoQueue } from '../../shared/queue.js';
 
 const router = express.Router();
 
@@ -29,7 +29,34 @@ router.get('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    const job = await getJob(req.params.id);
+    
+    // First remove from database
     await deleteJob(req.params.id);
+
+    // Then try to remove from BullMQ if it exists there
+    // We try both queues as we don't strictly know which one it belongs to without checking type
+    // BullMQ jobs in these queues are added with the database jobId as a property in data, 
+    // but BullMQ also has its own internal IDs. 
+    // However, some of our code (like retry) relies on the DB job.
+    
+    if (job) {
+      const removeBullJob = async (queue, id) => {
+        const bullJobs = await queue.getJobs(['active', 'waiting', 'completed', 'failed', 'delayed', 'paused']);
+        for (const bj of bullJobs) {
+          if (bj.data && (bj.data.jobId === id || bj.data.jobId === parseInt(id))) {
+            await bj.remove();
+            console.log(`[Jobs] Removed BullMQ job ${bj.id} associated with DB job ${id}`);
+          }
+        }
+      };
+
+      await Promise.all([
+        removeBullJob(aiQueue, req.params.id),
+        removeBullJob(pontoQueue, req.params.id)
+      ]).catch(err => console.error('[Jobs] Error cleaning up BullMQ jobs:', err));
+    }
+
     res.json({ message: 'Job deleted successfully' });
   } catch (err) {
     console.error(err);

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Activity, Clock, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronUp, RotateCcw, Trash2, Server } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function JobsView({ jobs, workers = [], onRefresh }) {
   const [expandedJob, setExpandedJob] = React.useState(null);
@@ -10,10 +11,8 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
     e.stopPropagation();
     setRetryingId(id);
     try {
-      const res = await fetch(`/api/jobs/${id}/retry`, { method: 'POST' });
-      if (res.ok) {
-        onRefresh();
-      }
+      await api.post(`/jobs/${id}/retry`);
+      onRefresh();
     } catch (err) {
       console.error('Retry failed:', err);
     } finally {
@@ -25,8 +24,8 @@ export default function JobsView({ jobs, workers = [], onRefresh }) {
     e.stopPropagation();
     if (!confirm('Are you sure you want to remove this job record?')) return;
     try {
-      const res = await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
-      if (res.ok) onRefresh();
+      await api.delete(`/jobs/${id}`);
+      onRefresh();
     } catch (err) {
       console.error('Delete failed:', err);
     }
