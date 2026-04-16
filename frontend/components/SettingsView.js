@@ -4,6 +4,7 @@ import {
   CheckCircle, AlertCircle
 } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
+import { api } from '../services/api';
 
 export default function SettingsView({
   summary, accountNames = [], categories = [],
