@@ -130,6 +130,15 @@ export const initDb = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        endpoint TEXT UNIQUE NOT NULL,
+        keys JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Ensure refresh_token is nullable for Client Credentials flow
     await client.query(`
       ALTER TABLE ponto_tokens ALTER COLUMN refresh_token DROP NOT NULL;
@@ -669,6 +678,40 @@ export const deleteJob = async (id) => {
     await pool.query('DELETE FROM background_jobs WHERE id = \$1', [id]);
   } catch (err) {
     console.error(`Error deleting job \${id}:`, err);
+    throw err;
+  }
+};
+
+export const saveWebPushSubscription = async (subscription) => {
+  try {
+    const { endpoint, keys } = subscription;
+    await pool.query(
+      `INSERT INTO web_push_subscriptions (endpoint, keys)
+       VALUES (\$1, \$2)
+       ON CONFLICT (endpoint) DO UPDATE SET keys = EXCLUDED.keys`,
+      [endpoint, JSON.stringify(keys)]
+    );
+  } catch (err) {
+    console.error('Error saving web push subscription:', err);
+    throw err;
+  }
+};
+
+export const getWebPushSubscriptions = async () => {
+  try {
+    const res = await pool.query('SELECT endpoint, keys FROM web_push_subscriptions');
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching web push subscriptions:', err);
+    return [];
+  }
+};
+
+export const deleteWebPushSubscription = async (endpoint) => {
+  try {
+    await pool.query('DELETE FROM web_push_subscriptions WHERE endpoint = \$1', [endpoint]);
+  } catch (err) {
+    console.error('Error deleting web push subscription:', err);
     throw err;
   }
 };

@@ -10,6 +10,7 @@ import rulesRoutes from './routes/rules.js';
 import jobRoutes from './routes/jobs.js';
 import pontoRoutes from './routes/ponto.js';
 import authRoutes from './routes/auth.js';
+import notificationsRoutes from './routes/notifications.js';
 import { authenticateToken } from './middleware/auth.js';
 import { pontoQueue } from '../shared/queue.js';
 
@@ -75,13 +76,13 @@ app.use('/api/upload', authenticateToken, uploadRoutes);
 app.use('/api/rules', authenticateToken, rulesRoutes);
 app.use('/api/jobs', authenticateToken, jobRoutes);
 app.use('/api/integrations/ponto', authenticateToken, pontoRoutes);
+app.use('/api/notifications', authenticateToken, notificationsRoutes);
 
 const startServer = async () => {
   // Start listening immediately so healthchecks pass while we initialize
-  const server = app.listen(port, () => {
+  app.listen(port, () => {
     console.log(`Backend listening at http://0.0.0.0:${port}`);
   });
-
   try {
     const dbUrl = process.env.DATABASE_URL || '';
     const maskedUrl = dbUrl.replace(/:([^@]+)@/, ':****@');

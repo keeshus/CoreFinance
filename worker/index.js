@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { pool, getSettings, getRules, addRule, getAccountNames, updateJob, createJob } from '../shared/db.js';
+import { pool, addRule, updateJob, createJob } from '../shared/db.js';
 
 const connection = new IORedis(process.env.VALKEY_URL || 'valkey://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -102,7 +102,7 @@ const worker = new Worker('ai-processing', async (job) => {
         }
 
         try {
-          const batchResults = await aiService.processBatch(currentTransactions, activeRules, { 
+          await aiService.processBatch(currentTransactions, activeRules, {
             disableAnomalyDetection,
             historicalContext,
             onTransactionEnriched: async (enriched) => {
@@ -115,11 +115,11 @@ const worker = new Worker('ai-processing', async (job) => {
                 }
 
                 await pool.query(
-                  'UPDATE transactions SET ai_enriched = true, metadata = metadata || $1::jsonb WHERE id = $2',
-                  [JSON.stringify(enriched), numericId]
+                    'UPDATE transactions SET ai_enriched = true, metadata = metadata || $1::jsonb WHERE id = $2',
+                    [JSON.stringify(enriched), numericId]
                 );
                 enrichedIds.add(numericId);
-                
+
                 if (enriched.proposed_rules && Array.isArray(enriched.proposed_rules)) {
                   for (const rule of enriched.proposed_rules) {
                     await addRule(rule.name, rule.description, true, rule.expected_amount, rule.amount_margin, rule.type, rule.category);
@@ -130,11 +130,11 @@ const worker = new Worker('ai-processing', async (job) => {
                 const baseProgress = Math.floor(((chunkNum - 1) / totalChunks) * 100);
                 const chunkContribution = Math.floor((enrichedIds.size / transactions.length) * (100 / totalChunks));
                 const totalProgress = Math.min(99, baseProgress + chunkContribution);
-                
-                await updateJob(jobId, { 
+
+                await updateJob(jobId, {
                   status: 'processing',
                   progress: totalProgress,
-                  workerId 
+                  workerId
                 });
               } catch (e) {
                 console.error(`[Worker] Failed to save transaction ${enriched.id}:`, e);
@@ -179,23 +179,61 @@ const worker = new Worker('ai-processing', async (job) => {
     console.log(`[Worker] Finalizing job ${jobId}. All ${totalChunks} chunks reported complete.`);
     
     try {
-      await updateJob(jobId, { 
-        status: 'completed', 
-        progress: 100, 
+      await updateJob(jobId, {
+        status: 'completed',
+        progress: 100,
         log: `AI categorization completed successfully. Processed ${totalChunks} parallel chunks.`
       });
       console.log(`[Worker] Job ${jobId} marked as completed.`);
+
+      // Check for deviations and send push notification
+      try {
+        const { getJob, pool } = await import('../shared/db.js');
+        const { sendPushNotification } = await import('../shared/notifications.js');
+        
+        const jobRecord = await getJob(jobId);
+        if (jobRecord && jobRecord.payload && jobRecord.payload.transactionIds) {
+          const ids = jobRecord.payload.transactionIds;
+          
+          if (ids.length > 0) {
+            const res = await pool.query(`
+              SELECT id, name_description, amount, currency
+              FROM transactions
+              WHERE id = ANY($1) AND (
+                metadata->>'is_anomalous' = 'true'
+                OR (
+                  jsonb_typeof(metadata->'rule_violations') = 'array'
+                  AND EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(metadata->'rule_violations') AS v
+                    WHERE v::text != '"none"' AND v::text != '"None"'
+                  )
+                )
+              )
+            `, [ids]);
+            
+            const deviations = res.rows;
+            if (deviations.length > 0) {
+              const title = `Ponto Sync: ${deviations.length} deviation(s) found`;
+              const body = deviations.map(d => `${d.name_description} (${d.amount} ${d.currency})`).join(', ');
+              await sendPushNotification(title, body, '/?tab=deviations');
+            } else {
+              await sendPushNotification('Ponto Sync Finished', `Processed ${ids.length} transactions, no deviations found.`, '/');
+            }
+          }
+        }
+      } catch (notifErr) {
+        console.error('Error sending push notification on finalize:', notifErr);
+      }
     } catch (err) {
       console.error(`[Worker] Failed to finalize job ${jobId}:`, err);
       throw err;
     }
   }
 }, { connection, lockDuration: 120000, concurrency: 5 });
-
-const pontoWorker = new Worker('ponto-sync', async (job) => {
+new Worker('ponto-sync', async (job) => {
   if (job.name === 'ponto-sync') {
     let { jobId } = job.data;
-    
+
     // If this is a scheduled job without a pre-created DB record, create one now
     if (!jobId) {
       jobId = await createJob('ponto-sync', { scheduled: true });
@@ -205,7 +243,6 @@ const pontoWorker = new Worker('ponto-sync', async (job) => {
     await runPontoSync(jobId);
   }
 }, { connection, lockDuration: 300000, concurrency: 1 });
-
 console.log(`Worker starting (ID: ${workerId})...`);
 console.log(`BullMQ Worker configuration: lockDuration=${worker.opts.lockDuration}ms`);
 

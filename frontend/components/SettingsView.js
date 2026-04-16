@@ -20,7 +20,73 @@ export default function SettingsView({
 
   // Categories
   const [localCategories, setLocalCategories] = useState([...categories]);
+  const [pushStatus, setPushStatus] = useState('Checking...');
   const [editingCategoryIdx, setEditingCategoryIdx] = useState(null);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      navigator.serviceWorker.register('/sw.js').then(registration => {
+        return registration.pushManager.getSubscription();
+      }).then(subscription => {
+        if (subscription) {
+          setPushStatus('Subscribed');
+        } else {
+          setPushStatus('Not Subscribed');
+        }
+      }).catch(err => {
+        console.error('Service Worker or Push Manager error:', err);
+        setPushStatus('Error: ' + err.message);
+      });
+    } else {
+      setPushStatus('Not Supported');
+    }
+  }, []);
+
+  const subscribeToPush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Push notifications are not supported in this browser.');
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      
+      console.log('Fetching VAPID public key...');
+      const response = await api.get('/notifications/vapid-public-key');
+      console.log('Got VAPID response:', response);
+      const vapidPublicKey = response.publicKey;
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+
+      await api.post('/notifications/subscribe', subscription);
+      setPushStatus('Subscribed');
+      alert('Successfully subscribed to push notifications!');
+    } catch (err) {
+      console.error('Error subscribing to push:', err);
+      if (Notification.permission === 'denied') {
+        alert('You have blocked notifications for this site. Please enable them in your browser settings.');
+      } else {
+        alert('Failed to subscribe: ' + err.message);
+      }
+    }
+  };
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
   const [editCategoryData, setEditCategoryData] = useState({ name: '', description: '' });
   const [isAddingCategory, setIsAddingCategory] = useState(false);
 
@@ -612,6 +678,38 @@ export default function SettingsView({
                 )}
               </div>
             ))}
+         </div>
+      </div>
+
+      {/* Push Notifications Section */}
+      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+              Push Notifications
+            </h3>
+         </div>
+         <p style={{ color: '#64748b', marginBottom: '20px' }}>
+           Get notified on your phone or desktop when deviations are found in the daily Ponto sync.
+         </p>
+         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button
+              onClick={subscribeToPush}
+              disabled={pushStatus === 'Subscribed' || pushStatus === 'Not Supported'}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '12px',
+                fontWeight: 'bold',
+                border: 'none',
+                cursor: pushStatus === 'Subscribed' || pushStatus === 'Not Supported' ? 'not-allowed' : 'pointer',
+                background: pushStatus === 'Subscribed' ? '#22c55e' : pushStatus === 'Not Supported' ? '#94a3b8' : '#3b82f6',
+                color: '#fff'
+              }}
+            >
+              {pushStatus === 'Subscribed' ? 'Subscribed' : 'Enable Notifications'}
+            </button>
+            <span style={{ fontSize: '0.9em', color: '#64748b', fontWeight: 'bold' }}>
+              Status: {pushStatus}
+            </span>
          </div>
       </div>
 

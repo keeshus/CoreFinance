@@ -26,6 +26,7 @@ RUN apk add --no-cache curl tini
 
 # Copy only necessary files for production
 COPY --from=builder /app/frontend/.next ./frontend/.next
+COPY --from=builder /app/frontend/public ./frontend/public
 COPY --from=builder /app/frontend/package*.json ./frontend/
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
