@@ -4,9 +4,10 @@ import { saveWebPushSubscription } from '../../shared/db.js';
 const router = express.Router();
 
 router.get('/vapid-public-key', async (req, res) => {
-  // Ideally, this should come from process.env or settings. 
-  // We'll return the hardcoded key or one from env.
-  const publicKey = process.env.VAPID_PUBLIC_KEY || 'BC9RxrtPWpNK45tEzgTPYNCuFognpnFTpk9u1Oy9a4AeRbzA5P0yTVq35eBRETzV_VW0ZCT8llJg_gyexpyrhxc';
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  if (!publicKey) {
+    return res.status(500).json({ error: 'VAPID_PUBLIC_KEY environment variable is not configured.' });
+  }
   res.json({ publicKey });
 });
 

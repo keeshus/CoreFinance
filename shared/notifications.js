@@ -1,16 +1,22 @@
 import webpush from 'web-push';
 import { getWebPushSubscriptions } from './db.js';
 
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || 'BC9RxrtPWpNK45tEzgTPYNCuFognpnFTpk9u1Oy9a4AeRbzA5P0yTVq35eBRETzV_VW0ZCT8llJg_gyexpyrhxc';
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '0Ex_BuzzE8azoDLHU78FZ2YcSFeI4Ecp-Ic2d6qid1g';
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
 
-webpush.setVapidDetails(
-  'mailto:support@corefinance.local',
-  vapidPublicKey,
-  vapidPrivateKey
-);
+if (vapidPublicKey && vapidPrivateKey) {
+  webpush.setVapidDetails(
+    'mailto:support@corefinance.local',
+    vapidPublicKey,
+    vapidPrivateKey
+  );
+}
 
 export const sendPushNotification = async (title, body, url = '/') => {
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    console.error('Push notification failed: VAPID keys are not configured in environment variables.');
+    return;
+  }
   try {
     const subscriptions = await getWebPushSubscriptions();
     if (subscriptions.length === 0) {
