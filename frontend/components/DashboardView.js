@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calendar, Search, ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X, Info, Sparkles, AlertCircle, ShieldCheck, FileText, Globe, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calendar, Search, ArrowUpDown, ChevronLeft, ChevronRight, X, Info, Sparkles, AlertCircle, ShieldCheck, FileText, Globe, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Cell, BarChart, Bar } from 'recharts';
 import CategoryBadge, { CATEGORY_MAP } from './CategoryBadge';
+import { api } from '../services/api';
 
 export default function DashboardView({ summary, trend, transactions, fetchTransactions, loading }) {
   const [timespan, setTimespan] = useState('30d');
@@ -18,6 +19,8 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const [pageSize, setPageSize] = useState(50);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [deselectedCategories, setDeselectedCategories] = useState(['Uncategorized']);
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [newCategoryValue, setNewCategoryValue] = useState('');
   
   const TIMESPAN_OPTIONS = [
     { label: 'Last 7 Days', value: '7d' },
@@ -259,10 +262,10 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
     <div className="dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '30px', opacity: loading ? 0.6 : 1, transition: 'opacity 0.2s', position: 'relative' }}>
       {selectedTransaction && (
         <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', 
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000,
           backdropFilter: 'blur(4px)'
-        }} onClick={() => setSelectedTransaction(null)}>
+        }} onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }}>
           <div style={{
             background: '#fff', padding: '30px', borderRadius: '24px', maxWidth: '500px', width: '90%',
             maxHeight: '90vh', overflowY: 'auto',
@@ -274,7 +277,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                 <h2 style={{ margin: 0, fontSize: '1.25em', fontWeight: 'bold' }}>Transaction Details</h2>
                 <div style={{ fontSize: '0.85em', color: '#64748b', marginTop: '4px' }}>{formatDate(selectedTransaction.date, selectedTransaction.time)}</div>
               </div>
-              <button onClick={() => setSelectedTransaction(null)} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '12px', cursor: 'pointer' }}>
+              <button onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '12px', cursor: 'pointer' }}>
                 <X size={20} color="#64748b" />
               </button>
             </div>
@@ -343,6 +346,44 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
                 </div>
               )}
 
+              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold' }}>Category</div>
+                  {!editingCategory && (
+                    <button onClick={() => { setEditingCategory(true); setNewCategoryValue(selectedTransaction.metadata?.ai_category || 'Uncategorized'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: '0.85em', fontWeight: 'bold' }}>Edit</button>
+                  )}
+                </div>
+                {editingCategory ? (
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <select
+                      value={newCategoryValue}
+                      onChange={(e) => setNewCategoryValue(e.target.value)}
+                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff' }}
+                    >
+                      <option value="Uncategorized">Uncategorized</option>
+                      {Object.keys(CATEGORY_MAP).map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                    <button onClick={async () => {
+                      try {
+                        const updatedTx = await api.patch(`/transactions/${selectedTransaction.id}/category`, { category: newCategoryValue });
+                        setSelectedTransaction(updatedTx);
+                        fetchTransactions({ page: currentPage, pageSize, account: selectedAccount, category: categoryFilter.length > 0 ? categoryFilter : 'all', search: searchQuery, startDate: dateFilter.start, endDate: dateFilter.end, sortField, sortOrder, deviationsOnly });
+                        setEditingCategory(false);
+                      } catch (err) {
+                        alert('Failed to update category');
+                      }
+                    }} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Save</button>
+                    <button onClick={() => setEditingCategory(false)} style={{ background: '#e2e8f0', color: '#64748b', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <CategoryBadge category={selectedTransaction.metadata?.ai_category || 'Uncategorized'} />
+                  </div>
+                )}
+              </div>
+
               {selectedTransaction.metadata && Object.keys(selectedTransaction.metadata).length > 0 && (
                 <div style={{ marginTop: '5px' }}>
                   <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -363,9 +404,9 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
               )}
             </div>
             
-            <button 
-              onClick={() => setSelectedTransaction(null)}
-              style={{ 
+            <button
+              onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }}
+              style={{
                 background: '#3b82f6', color: '#fff', border: 'none', padding: '12px', borderRadius: '16px', 
                 fontWeight: 'bold', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 6px -1px rgba(59,130,246,0.3)'
               }}
@@ -491,7 +532,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
               <Sparkles size={18} color="#7c3aed" /> Spending by Category
             </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '15px' }}>
-              {categoryData.slice(0, 10).map((cat, idx) => {
+              {categoryData.slice(0, 10).map((cat) => {
                 const isDeselected = deselectedCategories.includes(cat.name);
                 const info = CATEGORY_MAP[cat.name] || CATEGORY_MAP['Uncategorized'];
                 return (
@@ -831,108 +872,6 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
           </div>
         )}
       </div>
-      <style jsx>{`
-        .summary-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 15px;
-        }
-
-        @media (max-width: 640px) {
-          .summary-grid {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 16px !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            overflow: visible !important;
-          }
-
-          .account-card {
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            flex: 1 1 auto !important;
-            padding: 24px !important;
-            border-radius: 28px !important;
-            box-sizing: border-box !important;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
-            margin: 0 !important;
-          }
-
-          .card-amount {
-            font-size: 1.5em !important;
-          }
-
-          .card-title {
-            font-size: 1em !important;
-          }
-
-          .card-amount {
-            font-size: 1.25em !important;
-          }
-
-          .card-subtitle {
-            display: none !important;
-          }
-
-          .card-badge {
-            font-size: 0.6em !important;
-          }
-
-          .card-icon {
-            padding: 8px !important;
-          }
-          
-          .category-dropdown {
-            right: auto !important;
-            left: 0 !important;
-            min-width: 200px !important;
-          }
-
-          .hide-mobile {
-            display: none !important;
-          }
-          .show-mobile-only {
-            display: inline !important;
-          }
-          .charts-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-        
-        @media (min-width: 641px) {
-          .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-          }
-
-          .account-card {
-            padding: 20px !important;
-            border-radius: 20px !important;
-          }
-
-          .card-amount {
-            font-size: 1.5em !important;
-          }
-
-          .card-subtitle {
-            display: block !important;
-          }
-
-          .show-mobile-only {
-            display: none !important;
-          }
-
-          .charts-grid {
-            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)) !important;
-            gap: 20px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

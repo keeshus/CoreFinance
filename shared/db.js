@@ -822,3 +822,22 @@ export const getAIModels = async () => {
     return [];
   }
 };
+
+export const updateTransactionCategory = async (id, category) => {
+  try {
+    const res = await pool.query(
+      `UPDATE transactions 
+       SET metadata = jsonb_set(
+         COALESCE(metadata, '{}'::jsonb), 
+         '{ai_category}', 
+         to_jsonb($2::text)
+       ) 
+       WHERE id = $1 RETURNING *`,
+      [id, category]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error updating transaction category:', err);
+    throw err;
+  }
+};

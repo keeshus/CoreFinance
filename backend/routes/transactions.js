@@ -1,5 +1,5 @@
 import express from 'express';
-import { getTransactions, getSummary, getTrend } from '../../shared/db.js';
+import { getTransactions, getSummary, getTrend, updateTransactionCategory } from '../../shared/db.js';
 
 const router = express.Router();
 
@@ -42,6 +42,28 @@ router.get('/trend', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch trend' });
+  }
+});
+
+router.patch('/:id/category', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category } = req.body;
+    
+    if (!category) {
+      return res.status(400).json({ error: 'Category is required' });
+    }
+
+    const updatedTx = await updateTransactionCategory(id, category);
+    
+    if (!updatedTx) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    res.json(updatedTx);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update transaction category' });
   }
 });
 

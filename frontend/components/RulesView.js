@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Plus, Check, X, Zap, Edit2, Save, AlertCircle, CheckCircle, Download, Upload } from 'lucide-react';
+import { ShieldCheck, Plus, Check, X, Zap, Edit2, Save, AlertCircle, CheckCircle, Download, Upload, Search } from 'lucide-react';
 
 export default function RulesView({ rules, categories, onAddRule, onUpdateRuleStatus, onDeleteRule, onImportRules }) {
   const [newRuleType, setNewRuleType] = useState('validation');
@@ -18,6 +18,10 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
   const [editCategory, setEditCategory] = useState('');
 
   const [notification, setNotification] = useState(null);
+
+  const [ruleSearch, setRuleSearch] = useState('');
+  const [ruleTypeFilter, setRuleTypeFilter] = useState('all');
+  const [ruleCategoryFilter, setRuleCategoryFilter] = useState('all');
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -58,7 +62,14 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
     }
   };
 
-  const activeRules = rules.filter(r => !r.is_proposed);
+  const activeRules = rules.filter(r => {
+    if (r.is_proposed) return false;
+    if (ruleTypeFilter !== 'all' && r.type !== ruleTypeFilter) return false;
+    if (ruleCategoryFilter !== 'all' && (r.category || 'all') !== ruleCategoryFilter) return false;
+    return !(ruleSearch && !r.name.toLowerCase().includes(ruleSearch.toLowerCase()) && !r.pattern.toLowerCase().includes(ruleSearch.toLowerCase()));
+
+  });
+
   const proposedRules = rules.filter(r => r.is_proposed);
 
   const startEditing = (rule) => {
@@ -249,9 +260,45 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
 
       {/* Active Rules List */}
       <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
-         <h3 style={{ margin: '0 0 20px', fontSize: '1.1em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
-           <ShieldCheck size={20} color="#3b82f6" /> Active Rules
-         </h3>
+         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+           <h3 style={{ margin: 0, fontSize: '1.1em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+             <ShieldCheck size={20} color="#3b82f6" /> Active Rules
+           </h3>
+           
+           {/* Filters */}
+           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+             <div style={{ position: 'relative' }}>
+               <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+               <input
+                 type="text"
+                 placeholder="Search rules..."
+                 value={ruleSearch}
+                 onChange={(e) => setRuleSearch(e.target.value)}
+                 style={{ padding: '8px 12px 8px 35px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85em', width: '200px' }}
+               />
+             </div>
+             <select
+               value={ruleTypeFilter}
+               onChange={(e) => setRuleTypeFilter(e.target.value)}
+               style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85em', background: '#fff' }}
+             >
+               <option value="all">All Types</option>
+               <option value="validation">Validation</option>
+               <option value="categorization">Categorization</option>
+             </select>
+             <select
+               value={ruleCategoryFilter}
+               onChange={(e) => setRuleCategoryFilter(e.target.value)}
+               style={{ padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85em', background: '#fff' }}
+             >
+               <option value="all">All Categories</option>
+               {categories && categories.map(c => (
+                 <option key={c.name} value={c.name}>{c.name}</option>
+               ))}
+             </select>
+           </div>
+         </div>
+
          <div className="rules-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
            {activeRules.length === 0 && <p style={{ color: '#94a3b8', fontSize: '0.9em' }}>No active rules defined.</p>}
            {activeRules.map(rule => {
@@ -438,35 +485,16 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
          </div>
       </div>
       <style jsx>{`
-        @media (max-width: 640px) {
-          .hide-mobile {
-            display: none !important;
+          @keyframes slideIn {
+              from {
+                  transform: translateX(100%);
+                  opacity: 0;
+              }
+              to {
+                  transform: translateX(0);
+                  opacity: 1;
+              }
           }
-          .show-mobile-only {
-            display: inline !important;
-          }
-        }
-        
-        @media (min-width: 641px) {
-          .show-mobile-only {
-            display: none !important;
-          }
-          .active-rules-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-            gap: 20px;
-          }
-          .rules-list {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 15px;
-          }
-        }
-        
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
       `}</style>
     </div>
   );
