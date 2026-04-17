@@ -152,11 +152,11 @@ export class AIService {
       ${taskList}
 
          - 'ai_category' MUST strictly be one of: ${categoryNames}.
-         - Categorization rules tell you which category to assign. If a categorization rule matches a transaction, you MUST assign the category specified in that rule.
-         - Validation rules are used to detect anomalies. Only validation rules can generate 'rule_violations'.
+         - Categorization rules tell you which category to assign. If a categorization rule matches a transaction, you MUST assign the category specified in that rule. DO NOT create a rule_violation for a matched categorization rule. A successful match is not a violation.
+         - Validation rules are used to detect anomalies. ONLY validation rules can generate 'rule_violations', and ONLY when the transaction fails to meet the expected criteria of the validation rule.
          - Each rule_violations object MUST have:
-           - 'rule_id': The ID of the violated rule.
-           - 'reason': A brief, clear explanation of WHY the rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
+           - 'rule_id': The ID of the violated validation rule.
+           - 'reason': A brief, clear explanation of WHY the validation rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
          - If NO validation rules are violated, return an empty array []. NEVER return ["none"] or similar placeholders.
          
          A validation rule is violated if:
