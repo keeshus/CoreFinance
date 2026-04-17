@@ -1,4 +1,5 @@
 import {
+  pool,
   getPontoAccounts, getLatestTransactionDate, saveTransaction,
   updateDailyBalance, getTransactionsForBalanceCalc, updateJob,
   getSettings, getRules, createJob
@@ -82,8 +83,8 @@ export async function runPontoSync(jobId) {
         if (pontoData.data && pontoData.data.length > 0) {
           // Double check the range manually to ensure we only keep what we asked for
           const filteredData = pontoData.data.filter(pt => {
-            const normalizedDate = normalizeDate(pt.attributes.valueDate);
-            return normalizedDate >= keepFromDate && normalizedDate <= yesterdayStr;
+            const normalizedDateVal = normalizeDate(pt.attributes.executionDate || pt.attributes.valueDate);
+            return normalizedDateVal >= keepFromDate && normalizedDateVal <= yesterdayStr;
           });
 
           if (filteredData.length < pontoData.data.length) {
@@ -93,14 +94,14 @@ export async function runPontoSync(jobId) {
           allPontoTransactions.push(...filteredData);
           
           if (filteredData.length > 0) {
-            const firstDate = normalizeDate(filteredData[0].attributes.valueDate);
-            const lastDate = normalizeDate(filteredData[filteredData.length - 1].attributes.valueDate);
+            const firstDate = normalizeDate(filteredData[0].attributes.executionDate || filteredData[0].attributes.valueDate);
+            const lastDate = normalizeDate(filteredData[filteredData.length - 1].attributes.executionDate || filteredData[filteredData.length - 1].attributes.valueDate);
             await updateJob(jobId, { log: `Page ${pagesFetched + 1} kept ${filteredData.length} txs. Date range in kept: ${firstDate} to ${lastDate}` });
           }
 
-          // If we received ANY transaction older than our 'keep' date, Ponto has definitely 
+          // If we received ANY transaction older than our 'keep' date, Ponto has definitely
           // gone past our relevant window, so we stop fetching entirely.
-          const lastNormalizedDate = normalizeDate(pontoData.data[pontoData.data.length - 1].attributes.valueDate);
+          const lastNormalizedDate = normalizeDate(pontoData.data[pontoData.data.length - 1].attributes.executionDate || pontoData.data[pontoData.data.length - 1].attributes.valueDate);
 
           if (lastNormalizedDate < fetchFromDate) {
             reachedOldTransactions = true;
@@ -149,11 +150,11 @@ export async function runPontoSync(jobId) {
           ? counterpartyName 
           : (cleanDescription || cleanRemittance || 'No description');
 
-        const normalizedValueDate = normalizeDate(attr.valueDate);
+        const normalizedDate = normalizeDate(attr.executionDate || attr.valueDate);
 
         // Map Ponto to local schema
         const tx = {
-          date: normalizedValueDate,
+          date: normalizedDate,
           time: time,
           account: acc.account_id,
           name_description: nameDescription,
@@ -187,61 +188,76 @@ export async function runPontoSync(jobId) {
         log: `Imported ${newTransactions.length} new transactions for ${acc.name}.` 
       });
 
-      // 3. Balance Reconstruction Anchor
-      // Fetch current balance and intraday transactions to find yesterday's EOD
-      const accountDetails = await PontoService.fetchAccountDetails(acc.ponto_id);
-      const currentBalance = parseFloat(accountDetails.attributes.currentBalance);
+      // 3. Balance Reconstruction
+      const dbRes = await pool.query("SELECT date, balance FROM daily_balances WHERE account = $1 ORDER BY date DESC LIMIT 1", [acc.account_id]);
       
-      // Fetch today's transactions (in memory only) to subtract from current balance
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const todayData = await PontoService.fetchTransactions(acc.ponto_id, { from: todayStr });
-      
-      let yesterdayEodBalance = currentBalance;
-      if (todayData.data) {
-        for (const t of todayData.data) {
-          // Only subtract if it's ACTUALLY today local time
-          if (normalizeDate(t.attributes.valueDate) === todayStr) {
-            yesterdayEodBalance -= parseFloat(t.attributes.amount);
+      if (dbRes.rows.length > 0) {
+        // Forward calculation from the last known balance
+        const lastKnownDateStr = format(new Date(dbRes.rows[0].date), 'yyyy-MM-dd');
+        let currentBal = parseFloat(dbRes.rows[0].balance);
+        await updateJob(jobId, { log: `Anchor: Found last known reliable EOD balance: ${currentBal} on ${lastKnownDateStr}` });
+        
+        const txsForCalc = await getTransactionsForBalanceCalc(acc.account_id, lastKnownDateStr);
+        const byDate = {};
+        txsForCalc.forEach(t => {
+          const d = format(new Date(t.date), 'yyyy-MM-dd');
+          if (d > lastKnownDateStr) {
+            if (!byDate[d]) byDate[d] = 0;
+            byDate[d] += parseFloat(t.amount);
+          }
+        });
+
+        let currentDate = addDays(parseISO(lastKnownDateStr), 1);
+        while (currentDate <= yesterday) {
+          const dStr = format(currentDate, 'yyyy-MM-dd');
+          const dayTotal = byDate[dStr] || 0;
+          currentBal = Math.round((currentBal + dayTotal) * 100) / 100;
+          
+          await updateDailyBalance(dStr, acc.account_id, currentBal);
+          currentDate = addDays(currentDate, 1);
+        }
+        await updateJob(jobId, { log: `Forward balance reconstruction completed.` });
+      } else {
+        // Fallback: Backward calculation if no history exists
+        const accountDetails = await PontoService.fetchAccountDetails(acc.ponto_id);
+        const currentBalance = parseFloat(accountDetails.attributes.currentBalance);
+        
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const todayData = await PontoService.fetchTransactions(acc.ponto_id, { from: todayStr });
+        
+        let yesterdayEodBalance = currentBalance;
+        if (todayData.data) {
+          for (const t of todayData.data) {
+            if (normalizeDate(t.attributes.executionDate || t.attributes.valueDate) === todayStr) {
+              yesterdayEodBalance -= parseFloat(t.attributes.amount);
+            }
           }
         }
+
+        await updateJob(jobId, { log: `Fallback Anchor: Current balance ${currentBalance}. Yesterday EOD: ${yesterdayEodBalance}` });
+        await updateDailyBalance(yesterdayStr, acc.account_id, yesterdayEodBalance);
+
+        const txsForCalc = await getTransactionsForBalanceCalc(acc.account_id, '2000-01-01');
+        const byDate = {};
+        txsForCalc.forEach(t => {
+          const d = format(new Date(t.date), 'yyyy-MM-dd');
+          if (!byDate[d]) byDate[d] = 0;
+          byDate[d] += parseFloat(t.amount);
+        });
+
+        let currentDate = yesterday;
+        let currentBal = yesterdayEodBalance;
+        
+        for (let i = 0; i < 90; i++) {
+          const dStr = format(currentDate, 'yyyy-MM-dd');
+          await updateDailyBalance(dStr, acc.account_id, currentBal);
+          const dayTotal = byDate[dStr] || 0;
+          currentBal = Math.round((currentBal - dayTotal) * 100) / 100;
+          currentDate = subDays(currentDate, 1);
+        }
+
+        await updateJob(jobId, { log: `Backward balance reconstruction fallback completed for 90 days.` });
       }
-
-      await updateJob(jobId, { log: `Anchor: Current balance is ${currentBalance}, Today's txs subtracted. Yesterday (${yesterdayStr}) EOD balance: ${yesterdayEodBalance}` });
-
-      // Save yesterday's EOD balance
-      await updateDailyBalance(yesterdayStr, acc.account_id, yesterdayEodBalance);
-
-      // 4. Backward reconstruction
-      // We walk backwards from yesterday to rebuild history based on actual transactions
-      const txsForCalc = await getTransactionsForBalanceCalc(acc.account_id, '2000-01-01');
-      
-      // Group by date
-      const byDate = {};
-      txsForCalc.forEach(t => {
-        const d = format(new Date(t.date), 'yyyy-MM-dd');
-        if (!byDate[d]) byDate[d] = 0;
-        byDate[d] += parseFloat(t.amount);
-      });
-
-      // We'll iterate backwards from yesterday and subtract/add
-      let currentDate = yesterday;
-      let currentBal = yesterdayEodBalance;
-      
-      // Go back 90 days to ensure the graph is updated correctly
-      for (let i = 0; i < 90; i++) {
-        const dStr = format(currentDate, 'yyyy-MM-dd');
-        
-        // Save balance for this day
-        await updateDailyBalance(dStr, acc.account_id, currentBal);
-        
-        // Subtract transactions of this day to get the EOD of the PREVIOUS day
-        const dayTotal = byDate[dStr] || 0;
-        currentBal = Math.round((currentBal - dayTotal) * 100) / 100;
-        
-        currentDate = subDays(currentDate, 1);
-      }
-
-      await updateJob(jobId, { log: `Backward balance reconstruction completed for 90 days.` });
 
       // 5. Trigger AI Enrichment
       if (newTransactions.length > 0) {
