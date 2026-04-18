@@ -204,14 +204,15 @@ export const getTransactions = async (filters = {}) => {
 
     if (deviationsOnly) {
       query += ` AND (
-        t.metadata->>'is_anomalous' = 'true' 
+        (t.metadata->>'is_anomalous' = 'true'
         OR (
           jsonb_typeof(t.metadata->'rule_violations') = 'array'
           AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(t.metadata->'rule_violations') AS v 
+            SELECT 1 FROM jsonb_array_elements(t.metadata->'rule_violations') AS v
             WHERE v::text != '"none"' AND v::text != '"None"'
           )
-        )
+        ))
+        AND (t.metadata->>'review_status' IS NULL OR (t.metadata->>'review_status' != 'accepted' AND t.metadata->>'review_status' != 'negated'))
       )`;
     }
 
@@ -820,6 +821,67 @@ export const getAIModels = async () => {
   } catch (err) {
     console.error('Error fetching AI models:', err);
     return [];
+  }
+};
+
+export const updateTransactionRuleViolations = async (id, violations) => {
+  try {
+    const res = await pool.query(
+      `UPDATE transactions
+       SET metadata = jsonb_set(
+         COALESCE(metadata, '{}'::jsonb),
+         '{rule_violations}',
+         $2::jsonb
+       )
+       WHERE id = $1 RETURNING *`,
+      [id, JSON.stringify(violations)]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error updating transaction rule violations:', err);
+    throw err;
+  }
+};
+
+export const updateTransactionAnomaly = async (id, isAnomalous, reason) => {
+  try {
+    const res = await pool.query(
+      `UPDATE transactions
+       SET metadata = jsonb_set(
+         jsonb_set(
+           COALESCE(metadata, '{}'::jsonb),
+           '{is_anomalous}',
+           to_jsonb($2::boolean)
+         ),
+         '{anomaly_reason}',
+         to_jsonb($3::text)
+       )
+       WHERE id = $1 RETURNING *`,
+      [id, isAnomalous, reason || '']
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error updating transaction anomaly:', err);
+    throw err;
+  }
+};
+
+export const resolveTransactionDeviation = async (id, status) => {
+  try {
+    const res = await pool.query(
+      `UPDATE transactions
+       SET metadata = jsonb_set(
+         COALESCE(metadata, '{}'::jsonb),
+         '{review_status}',
+         to_jsonb($2::text)
+       )
+       WHERE id = $1 RETURNING *`,
+      [id, status]
+    );
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error resolving transaction deviation:', err);
+    throw err;
   }
 };
 

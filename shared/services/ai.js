@@ -89,6 +89,7 @@ export class AIService {
           MAX(amount) as max_amount
         FROM transactions
         WHERE date > CURRENT_DATE - INTERVAL '1 year'
+          AND (metadata->>'review_status' IS DISTINCT FROM 'negated')
         GROUP BY counterparty
         HAVING COUNT(*) > 1
         ORDER BY frequency DESC

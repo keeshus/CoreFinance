@@ -3,6 +3,8 @@ import { CreditCard, TrendingUp, History, ArrowDownCircle, ArrowUpCircle, Calend
 import { AreaChart, Area, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Cell, BarChart, Bar } from 'recharts';
 import CategoryBadge, { CATEGORY_MAP } from './CategoryBadge';
 import { api } from '../services/api';
+import TransactionDetailsModal from './TransactionDetailsModal';
+import TransactionTable from './TransactionTable';
 
 export default function DashboardView({ summary, trend, transactions, fetchTransactions, loading }) {
   const [timespan, setTimespan] = useState('30d');
@@ -19,8 +21,6 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
   const [pageSize, setPageSize] = useState(50);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [deselectedCategories, setDeselectedCategories] = useState(['Uncategorized']);
-  const [editingCategory, setEditingCategory] = useState(false);
-  const [newCategoryValue, setNewCategoryValue] = useState('');
   
   const TIMESPAN_OPTIONS = [
     { label: 'Last 7 Days', value: '7d' },
@@ -213,16 +213,17 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
     const theme = colors[index % colors.length];
 
     return (
-      <div 
+      <div
         onClick={onClick}
         className="account-card"
-        style={{ 
-          background: isSelected ? '#3b82f6' : '#fff', 
+        style={{
+          background: isSelected ? '#3b82f6' : '#fff',
           color: isSelected ? '#fff' : 'inherit',
           padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0',
           boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '10px',
           cursor: 'pointer', transition: 'all 0.2s',
-          position: 'relative', overflow: 'hidden'
+          position: 'relative', overflow: 'hidden',
+          maxWidth: '400px'
         }}
       >
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -260,174 +261,36 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
 
   return (
     <div className="dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '30px', opacity: loading ? 0.6 : 1, transition: 'opacity 0.2s', position: 'relative' }}>
-      {selectedTransaction && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000,
-          backdropFilter: 'blur(4px)'
-        }} onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }}>
-          <div style={{
-            background: '#fff', padding: '30px', borderRadius: '24px', maxWidth: '500px', width: '90%',
-            maxHeight: '90vh', overflowY: 'auto',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
-            display: 'flex', flexDirection: 'column', gap: '20px'
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '1.25em', fontWeight: 'bold' }}>Transaction Details</h2>
-                <div style={{ fontSize: '0.85em', color: '#64748b', marginTop: '4px' }}>{formatDate(selectedTransaction.date, selectedTransaction.time)}</div>
-              </div>
-              <button onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '12px', cursor: 'pointer' }}>
-                <X size={20} color="#64748b" />
-              </button>
-            </div>
+      <TransactionDetailsModal
+        transaction={selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+        onUpdate={(updatedTx, skipRefetch = false) => {
+          setSelectedTransaction(updatedTx);
+          if (!skipRefetch) {
+            fetchTransactions({
+              page: currentPage, pageSize, account: selectedAccount,
+              category: categoryFilter.length > 0 ? categoryFilter : 'all',
+              search: searchQuery, startDate: dateFilter.start, endDate: dateFilter.end,
+              sortField, sortOrder, deviationsOnly
+            });
+          }
+        }}
+        formatCurrency={formatCurrency}
+        formatDate={formatDate}
+      />
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Description</div>
-                <div style={{ fontSize: '1em', fontWeight: 'bold', color: '#1e293b', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>{selectedTransaction.name_description}</div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Amount</div>
-                  <div style={{ fontSize: '1.1em', fontWeight: 'bold', color: parseFloat(selectedTransaction.amount) < 0 ? '#ef4444' : '#22c55e' }}>
-                    {formatCurrency(selectedTransaction.amount)}
-                  </div>
-                </div>
-                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Account</div>
-                  <div style={{ fontSize: '0.9em', fontWeight: 'bold', color: '#1e293b' }}>{selectedTransaction.account_display_name}</div>
-                </div>
-              </div>
-
-              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Import Method</div>
-                <div style={{ fontSize: '0.9em', fontWeight: 'bold', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {selectedTransaction.import_method === 'csv' && <><FileText size={16} color="#64748b" /> CSV Upload</>}
-                  {selectedTransaction.import_method === 'ponto' && <><Globe size={16} color="#3b82f6" /> Ponto Synchronization</>}
-                  {selectedTransaction.import_method === 'system' && <><Info size={16} color="#94a3b8" /> System Generated</>}
-                  {!selectedTransaction.import_method && <><Info size={16} color="#94a3b8" /> Unknown</>}
-                </div>
-              </div>
-
-              {selectedTransaction.counterparty && (
-                <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Counterparty</div>
-                  <div style={{ fontSize: '0.9em', color: '#1e293b', wordBreak: 'break-word' }}>{selectedTransaction.counterparty}</div>
-                </div>
-              )}
-
-              {selectedTransaction.metadata?.is_anomalous && (
-                <div style={{ background: '#fff1f2', padding: '15px', borderRadius: '16px', border: '1px solid #fecaca' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#e11d48', fontWeight: 'bold', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <AlertCircle size={14} /> Anomaly Detected
-                  </div>
-                  <div style={{ fontSize: '0.9em', color: '#9f1239', fontWeight: '500' }}>{selectedTransaction.metadata.anomaly_reason}</div>
-                </div>
-              )}
-
-              {selectedTransaction.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0 && (
-                <div style={{ background: '#fffbeb', padding: '15px', borderRadius: '16px', border: '1px solid #fef3c7' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#d97706', fontWeight: 'bold', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <ShieldCheck size={14} /> Rule Violations
-                  </div>
-                  <ul style={{ margin: '5px 0 0', paddingLeft: '20px', fontSize: '0.9em', color: '#92400e' }}>
-                    {selectedTransaction.metadata.rule_violations
-                      .filter(v => v && v !== 'none' && v !== 'None')
-                      .map((v, i) => (
-                      <li key={i}>
-                        {typeof v === 'object' ? (
-                          <span><strong>Rule {v.rule_id}:</strong> {v.reason}</span>
-                        ) : v}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold' }}>Category</div>
-                  {!editingCategory && (
-                    <button onClick={() => { setEditingCategory(true); setNewCategoryValue(selectedTransaction.metadata?.ai_category || 'Uncategorized'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: '0.85em', fontWeight: 'bold' }}>Edit</button>
-                  )}
-                </div>
-                {editingCategory ? (
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <select
-                      value={newCategoryValue}
-                      onChange={(e) => setNewCategoryValue(e.target.value)}
-                      style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff' }}
-                    >
-                      <option value="Uncategorized">Uncategorized</option>
-                      {Object.keys(CATEGORY_MAP).map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <button onClick={async () => {
-                      try {
-                        const updatedTx = await api.patch(`/transactions/${selectedTransaction.id}/category`, { category: newCategoryValue });
-                        setSelectedTransaction(updatedTx);
-                        fetchTransactions({ page: currentPage, pageSize, account: selectedAccount, category: categoryFilter.length > 0 ? categoryFilter : 'all', search: searchQuery, startDate: dateFilter.start, endDate: dateFilter.end, sortField, sortOrder, deviationsOnly });
-                        setEditingCategory(false);
-                      } catch (err) {
-                        alert('Failed to update category');
-                      }
-                    }} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Save</button>
-                    <button onClick={() => setEditingCategory(false)} style={{ background: '#e2e8f0', color: '#64748b', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <CategoryBadge category={selectedTransaction.metadata?.ai_category || 'Uncategorized'} />
-                  </div>
-                )}
-              </div>
-
-              {selectedTransaction.metadata && Object.keys(selectedTransaction.metadata).length > 0 && (
-                <div style={{ marginTop: '5px' }}>
-                  <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Info size={14} /> Additional Information
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {Object.entries(selectedTransaction.metadata).map(([key, value]) => {
-                      if (!value || value === '' || key === 'rule_violations' || key === 'anomaly_reason' || key === 'is_anomalous' || key === 'id' || key === 'ai_category' || key === 'proposed_rules') return null;
-                      return (
-                        <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px', gap: '10px' }}>
-                          <span style={{ color: '#64748b', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{key.replace(/_/g, ' ')}</span>
-                          <span style={{ color: '#1e293b', fontWeight: '500', textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <button
-              onClick={() => { setSelectedTransaction(null); setEditingCategory(false); }}
-              style={{
-                background: '#3b82f6', color: '#fff', border: 'none', padding: '12px', borderRadius: '16px', 
-                fontWeight: 'bold', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 6px -1px rgba(59,130,246,0.3)'
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="summary-grid">
-        <div 
+      <div className="summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+        <div
           onClick={() => setSelectedAccount('all')}
           className="account-card"
-          style={{ 
-            background: selectedAccount === 'all' ? '#3b82f6' : '#fff', 
+          style={{
+            background: selectedAccount === 'all' ? '#3b82f6' : '#fff',
             color: selectedAccount === 'all' ? '#fff' : 'inherit',
             padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '10px',
             cursor: 'pointer', transition: 'all 0.2s',
-            position: 'relative', overflow: 'hidden'
+            position: 'relative', overflow: 'hidden',
+            maxWidth: '400px'
           }}
         >
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -723,113 +586,16 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '500px' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', fontSize: '0.75em', textTransform: 'uppercase', color: '#64748b', fontWeight: 'bold' }}>
-                <th 
-                  onClick={() => toggleSort('date')}
-                  style={{ padding: '15px 20px', cursor: 'pointer', userSelect: 'none', width: '150px' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    Date <ArrowUpDown size={12} opacity={sortField === 'date' ? 1 : 0.3} />
-                  </div>
-                </th>
-                <th className="hide-mobile" style={{ padding: '15px 20px', width: '140px' }}>
-                  Method
-                </th>
-                <th 
-                  onClick={() => toggleSort('name_description')}
-                  style={{ padding: '15px 20px', cursor: 'pointer', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    Description <ArrowUpDown size={12} opacity={sortField === 'name_description' ? 1 : 0.3} />
-                  </div>
-                </th>
-                <th className="hide-mobile" style={{ padding: '15px 20px' }}>
-                  Counterparty
-                </th>
-                <th 
-                  onClick={() => toggleSort('amount')}
-                  style={{ padding: '15px 20px', textAlign: 'right', cursor: 'pointer', userSelect: 'none', width: '120px' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'flex-end' }}>
-                    Amount <ArrowUpDown size={12} opacity={sortField === 'amount' ? 1 : 0.3} />
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions && transactions.map((t, idx) => (
-                <tr 
-                  key={idx} 
-                  onClick={() => setSelectedTransaction(t)}
-                  style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <td style={{ padding: '12px 20px', fontSize: '0.8em', color: '#64748b' }}>
-                    <div className="show-mobile-only">
-                      {new Date(t.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })}
-                    </div>
-                    <div className="hide-mobile">
-                      {formatDate(t.date, t.time)}
-                    </div>
-                  </td>
-                  <td className="hide-mobile" style={{ padding: '12px 20px', fontSize: '0.75em', color: '#94a3b8' }}>
-                    {t.import_method === 'csv' && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
-                        <FileText size={10} /> CSV
-                      </span>
-                    )}
-                    {t.import_method === 'ponto' && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#eff6ff', color: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>
-                        <Globe size={10} /> Ponto
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '12px 20px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ 
-                        padding: '6px', borderRadius: '8px', background: parseFloat(t.amount) < 0 ? '#fef2f2' : '#f0fdf4',
-                        color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e',
-                        flexShrink: 0
-                      }}>
-                        {parseFloat(t.amount) < 0 ? <ArrowDownCircle size={14} /> : <ArrowUpCircle size={14} />}
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: '0.85em', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {t.name_description}
-                          {t.metadata?.is_anomalous && <AlertCircle size={12} color="#ef4444" />}
-                          {t.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0 && <ShieldCheck size={12} color="#f59e0b" />}
-                        </div>
-                        <div style={{ fontSize: '0.7em', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          {t.account_display_name}
-                          {t.metadata?.ai_category && (
-                            <CategoryBadge category={t.metadata.ai_category} />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="hide-mobile" style={{ padding: '12px 20px', fontSize: '0.8em', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.counterparty || '-'}
-                  </td>
-                  <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85em', color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e' }}>
-                    {formatCurrency(t.amount)}
-                  </td>
-                </tr>
-              ))}
-              {(!transactions || transactions.length === 0) && (
-                <tr>
-                  <td colSpan="3" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9em' }}>
-                    {loading ? 'Loading...' : 'No transactions found.'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <TransactionTable
+          transactions={transactions}
+          loading={loading}
+          sortField={sortField}
+          sortOrder={sortOrder}
+          toggleSort={toggleSort}
+          setSelectedTransaction={setSelectedTransaction}
+          formatDate={formatDate}
+          formatCurrency={formatCurrency}
+        />
 
         {totalPages > 1 && (
           <div className="pagination-container" style={{ 
