@@ -136,11 +136,16 @@ router.patch('/:id/rule-violations', async (req, res) => {
 router.get('/:id/lookalikes', async (req, res) => {
   try {
     const { id } = req.params;
-    const { matchKey } = req.query;
+    const { matchKey, page, pageSize } = req.query;
     if (!matchKey) {
       return res.json([]);
     }
-    const lookalikes = await getLookalikeTransactions(matchKey, parseInt(id));
+    const lookalikes = await getLookalikeTransactions(
+      matchKey,
+      parseInt(id),
+      parseInt(page) || 1,
+      parseInt(pageSize) || 50
+    );
     res.json(lookalikes);
   } catch (err) {
     console.error(err);

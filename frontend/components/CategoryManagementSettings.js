@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CheckCircle, Plus, Edit2, Trash2, Check, X } from 'lucide-react';
+import { api } from '../services/api';
 
-export default function CategoryManagementSettings({ 
+export default function CategoryManagementSettings({
   categories, 
   onSaveCategories, 
   showNotification 
@@ -51,10 +52,10 @@ export default function CategoryManagementSettings({
           <button
             onClick={async () => {
               try {
-                await fetch('/api/jobs/audit', { method: 'POST' });
+                await api.post('/jobs/audit', {});
                 showNotification('Categorization audit job started. Check Jobs page.', 'success');
               } catch (e) {
-                showNotification('Failed to start audit job', 'error');
+                showNotification('Failed to start audit job: ' + e.message, 'error');
               }
             }}
             style={{ padding: '8px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}

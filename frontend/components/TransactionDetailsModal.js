@@ -7,14 +7,40 @@ import { useEffect } from 'react';
 export default function TransactionDetailsModal({ transaction, onClose, onUpdate, formatCurrency, formatDate }) {
   const [editingCategory, setEditingCategory] = useState(false);
   const [lookalikes, setLookalikes] = useState([]);
+  const [lookalikePage, setLookalikePage] = useState(1);
+  const [hasMoreLookalikes, setHasMoreLookalikes] = useState(false);
+  const [isLoadingLookalikes, setIsLoadingLookalikes] = useState(false);
   
   useEffect(() => {
     if (transaction?.metadata?.match_key) {
-      api.get(`/transactions/${transaction.id}/lookalikes?matchKey=${encodeURIComponent(transaction.metadata.match_key)}`)
-         .then(res => setLookalikes(res.data || []))
-         .catch(() => setLookalikes([]));
+      setLookalikePage(1);
+      fetchLookalikes(1, true);
     }
   }, [transaction?.id, transaction?.metadata?.match_key]);
+
+  const fetchLookalikes = async (page, reset = false) => {
+    if (!transaction?.metadata?.match_key) return;
+    setIsLoadingLookalikes(true);
+    try {
+      const data = await api.get(`/transactions/${transaction.id}/lookalikes?matchKey=${encodeURIComponent(transaction.metadata.match_key)}&page=${page}&pageSize=20`);
+      if (reset) {
+        setLookalikes(data);
+      } else {
+        setLookalikes(prev => [...prev, ...data]);
+      }
+      setHasMoreLookalikes(data.length > 0 && data[0].total_count > (reset ? 0 : lookalikes.length) + data.length);
+    } catch (e) {
+      console.error('Failed to fetch lookalikes', e);
+    } finally {
+      setIsLoadingLookalikes(false);
+    }
+  };
+
+  const handleLoadMoreLookalikes = () => {
+    const nextPage = lookalikePage + 1;
+    setLookalikePage(nextPage);
+    fetchLookalikes(nextPage);
+  };
   const [newCategoryValue, setNewCategoryValue] = useState('');
   const [editingAnomaly, setEditingAnomaly] = useState(false);
   const [newAnomalyReason, setNewAnomalyReason] = useState('');
@@ -89,21 +115,32 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
           )}
           
           {lookalikes.length > 0 && (
-            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '8px' }}>Lookalike Transactions (Same {transaction.metadata.match_type || 'Pattern'})</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold' }}>Lookalike Transactions ({lookalikes[0].total_count} total)</div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto', paddingRight: '5px' }}>
                 {lookalikes.map(l => (
                    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', padding: '8px', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                     <div>
-                       <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{l.name_description}</div>
+                     <div style={{ flex: 1, minWidth: 0 }}>
+                       <div style={{ fontWeight: 'bold', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name_description}</div>
                        <div style={{ color: '#64748b' }}>{formatDate(l.date, l.time)}</div>
                      </div>
-                     <div style={{ textAlign: 'right' }}>
+                     <div style={{ textAlign: 'right', marginLeft: '10px' }}>
                        <div style={{ fontWeight: 'bold', color: parseFloat(l.amount) < 0 ? '#ef4444' : '#22c55e' }}>{formatCurrency(l.amount)}</div>
                        <CategoryBadge category={l.metadata?.ai_category} />
                      </div>
                    </div>
                 ))}
+                
+                {hasMoreLookalikes && (
+                  <button
+                    onClick={handleLoadMoreLookalikes}
+                    disabled={isLoadingLookalikes}
+                    style={{ padding: '8px', background: '#e2e8f0', border: 'none', borderRadius: '8px', fontSize: '0.8em', fontWeight: 'bold', cursor: 'pointer', color: '#64748b' }}
+                  >
+                    {isLoadingLookalikes ? 'Loading...' : 'Load More...'}
+                  </button>
+                )}
               </div>
             </div>
           )}

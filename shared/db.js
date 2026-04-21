@@ -903,14 +903,16 @@ export const updateTransactionCategory = async (id, category) => {
   }
 };
 
-export const getLookalikeTransactions = async (matchKey, excludeId) => {
+export const getLookalikeTransactions = async (matchKey, excludeId, page = 1, pageSize = 50) => {
   try {
+    const offset = (page - 1) * pageSize;
     const res = await pool.query(
-      `SELECT * FROM transactions 
-       WHERE metadata->>'match_key' = $1 
-       AND id != $2 
-       ORDER BY date DESC LIMIT 5`,
-      [matchKey, excludeId]
+      `SELECT *, COUNT(*) OVER() as total_count
+       FROM transactions
+       WHERE metadata->>'match_key' = $1
+       AND id != $2
+       ORDER BY date DESC LIMIT $3 OFFSET $4`,
+      [matchKey, excludeId, pageSize, offset]
     );
     return res.rows;
   } catch (err) {
@@ -920,13 +922,26 @@ export const getLookalikeTransactions = async (matchKey, excludeId) => {
 };
 
 export const generateMatchKey = (tx) => {
-  if (tx.counterparty && tx.counterparty.toLowerCase() !== 'unknown') {
-    return `vendor:${tx.counterparty.trim()}`;
+  const counterparty = tx.counterparty && tx.counterparty.toLowerCase() !== 'unknown' ? tx.counterparty.trim() : null;
+  const description = tx.name_description ? tx.name_description.trim() : '';
+  
+  // Extract first two words of description for specificity
+  const descWords = description.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).filter(w => w.length > 1).slice(0, 2).join(' ').toLowerCase();
+
+  if (counterparty) {
+    // Check if counterparty is an IBAN (heuristic: long string of letters and numbers)
+    const isIban = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/i.test(counterparty);
+    if (isIban && descWords) {
+      // For IBANs, we must include description words to separate vendors sharing a payment processor
+      return `vendor:${counterparty}:${descWords}`;
+    }
+    return `vendor:${counterparty}`;
   }
-  if (tx.name_description) {
-    const cleanDesc = tx.name_description.replace(/[^a-zA-Z0-9 ]/g, '').trim().substring(0, 50);
-    return `desc:${cleanDesc}`;
+  
+  if (descWords) {
+    return `desc:${descWords}`;
   }
+  
   return null;
 };
 

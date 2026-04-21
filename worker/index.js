@@ -71,10 +71,10 @@ setInterval(() => {
 }, 1000);
 
 const worker = new Worker('ai-processing', async (job) => {
+  console.log(`[Worker] Received job: ${job.name} (ID: ${job.id})`);
   if (job.name === 'categorization-audit') {
     const { jobId } = job.data;
-    await runCategorizationAudit(jobId);
-
+    return await runCategorizationAudit(jobId);
   } else if (job.name === 'analyze-chunk') {
     const { 
       transactions, 
