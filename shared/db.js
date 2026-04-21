@@ -165,7 +165,7 @@ export const initDb = async () => {
     ];
 
     await client.query(
-      'INSERT INTO settings (key, value) VALUES (\$1, \$2) ON CONFLICT (key) DO NOTHING',
+      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING',
       ['categories', JSON.stringify(defaultCategories)]
     );
 
@@ -259,7 +259,7 @@ export const getTransactions = async (filters = {}) => {
 
 export const getTransactionsByIds = async (ids) => {
   try {
-    const res = await pool.query('SELECT * FROM transactions WHERE id = ANY(\$1)', [ids]);
+    const res = await pool.query('SELECT * FROM transactions WHERE id = ANY($1)', [ids]);
     return res.rows;
   } catch (err) {
     console.error('Error fetching transactions by ids:', err);
@@ -281,7 +281,7 @@ export const savePontoToken = async (accessToken, refreshToken, expiresIn) => {
   try {
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
     const res = await pool.query(
-      'INSERT INTO ponto_tokens (access_token, refresh_token, expires_at) VALUES (\$1, \$2, \$3) RETURNING *',
+      'INSERT INTO ponto_tokens (access_token, refresh_token, expires_at) VALUES ($1, $2, $3) RETURNING *',
       [accessToken, refreshToken, expiresAt]
     );
     return res.rows[0];
@@ -308,7 +308,7 @@ export const upsertPontoAccount = async (account) => {
   try {
     const res = await pool.query(
       `INSERT INTO ponto_accounts (ponto_id, account_id, name, currency, institution_name)
-       VALUES (\$1, \$2, \$3, \$4, \$5)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (ponto_id) DO UPDATE SET
          account_id = EXCLUDED.account_id,
          name = EXCLUDED.name,
@@ -327,7 +327,7 @@ export const upsertPontoAccount = async (account) => {
 export const setPontoAccountStatus = async (pontoId, isActive) => {
   try {
     const res = await pool.query(
-      'UPDATE ponto_accounts SET is_active = \$2 WHERE ponto_id = \$1 RETURNING *',
+      'UPDATE ponto_accounts SET is_active = $2 WHERE ponto_id = $1 RETURNING *',
       [pontoId, isActive]
     );
     return res.rows[0];
@@ -340,7 +340,7 @@ export const setPontoAccountStatus = async (pontoId, isActive) => {
 export const getLatestTransactionDate = async (account) => {
   try {
     const res = await pool.query(
-      'SELECT MAX(date) as latest FROM transactions WHERE account = \$1',
+      'SELECT MAX(date) as latest FROM transactions WHERE account = $1',
       [account]
     );
     return res.rows[0].latest;
@@ -356,7 +356,7 @@ export const saveTransaction = async (tx) => {
     const res = await pool.query(
       `INSERT INTO transactions (
         date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata
-      ) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       ON CONFLICT (external_id) DO UPDATE SET
         date = EXCLUDED.date,
         time = EXCLUDED.time,
@@ -390,7 +390,7 @@ export const updateDailyBalance = async (date, account, balance) => {
   try {
     await pool.query(
       `INSERT INTO daily_balances (date, account, balance)
-       VALUES (\$1, \$2, \$3)
+       VALUES ($1, $2, $3)
        ON CONFLICT (date, account) DO UPDATE SET balance = EXCLUDED.balance`,
       [date, account, balance]
     );
@@ -403,7 +403,7 @@ export const updateDailyBalance = async (date, account, balance) => {
 export const getTransactionsForBalanceCalc = async (account, fromDate) => {
   try {
     const res = await pool.query(
-      'SELECT date, amount FROM transactions WHERE account = \$1 AND date >= \$2 ORDER BY date DESC',
+      'SELECT date, amount FROM transactions WHERE account = $1 AND date >= $2 ORDER BY date DESC',
       [account, fromDate]
     );
     return res.rows;
@@ -418,7 +418,7 @@ export const insertTransaction = async (client, data) => {
     const { date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata } = data;
     const res = await client.query(
       `INSERT INTO transactions (date, time, account, name_description, counterparty, amount, currency, type, source, import_method, external_id, metadata)
-       VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (external_id) DO UPDATE SET
          date = EXCLUDED.date,
          time = EXCLUDED.time,
@@ -440,7 +440,7 @@ export const upsertDailyBalance = async (client, data) => {
     const { date, account, balance } = data;
     await client.query(
       `INSERT INTO daily_balances (date, account, balance)
-       VALUES (\$1, \$2, \$3)
+       VALUES ($1, $2, $3)
        ON CONFLICT (date, account) DO UPDATE SET balance = EXCLUDED.balance`,
       [date, account, balance]
     );
@@ -452,10 +452,10 @@ export const upsertDailyBalance = async (client, data) => {
 
 export const getSettings = async (key) => {
   try {
-    const res = await pool.query('SELECT value FROM settings WHERE key = \$1', [key]);
+    const res = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
     return res.rows[0]?.value;
   } catch (err) {
-    console.error(`Error fetching setting \${key}:`, err);
+    console.error(`Error fetching setting ${key}:`, err);
     return null;
   }
 };
@@ -463,11 +463,11 @@ export const getSettings = async (key) => {
 export const updateSettings = async (key, value) => {
   try {
     await pool.query(
-      'INSERT INTO settings (key, value) VALUES (\$1, \$2) ON CONFLICT (key) DO UPDATE SET value = \$2',
+      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
       [key, JSON.stringify(value)]
     );
   } catch (err) {
-    console.error(`Error updating setting \${key}:`, err);
+    console.error(`Error updating setting ${key}:`, err);
     throw err;
   }
 };
@@ -485,7 +485,7 @@ export const getRules = async () => {
 export const addRule = async (name, pattern, isProposed = false, expectedAmount = null, amountMargin = null, type = 'validation', category = null) => {
   try {
     const res = await pool.query(
-      'INSERT INTO rules (name, pattern, is_proposed, expected_amount, amount_margin, type, category) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7) RETURNING *',
+      'INSERT INTO rules (name, pattern, is_proposed, expected_amount, amount_margin, type, category) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [name, pattern, isProposed, expectedAmount, amountMargin, type, category]
     );
     return res.rows[0];
@@ -545,16 +545,16 @@ export const updateRule = async (id, updates) => {
     const res = await pool.query(query, params);
     return res.rows[0];
   } catch (err) {
-    console.error(`Error updating rule \${id}:`, err);
+    console.error(`Error updating rule ${id}:`, err);
     throw err;
   }
 };
 
 export const deleteRule = async (id) => {
   try {
-    await pool.query('DELETE FROM rules WHERE id = \$1', [id]);
+    await pool.query('DELETE FROM rules WHERE id = $1', [id]);
   } catch (err) {
-    console.error(`Error deleting rule \${id}:`, err);
+    console.error(`Error deleting rule ${id}:`, err);
     throw err;
   }
 };
@@ -572,12 +572,12 @@ export const getAccountNames = async () => {
 export const setAccountName = async (account, displayName, aiEnabled) => {
   try {
     const res = await pool.query(
-      'INSERT INTO account_names (account, display_name, ai_enabled) VALUES (\$1, \$2, \$3) ON CONFLICT (account) DO UPDATE SET display_name = \$2, ai_enabled = \$3 RETURNING *',
+      'INSERT INTO account_names (account, display_name, ai_enabled) VALUES ($1, $2, $3) ON CONFLICT (account) DO UPDATE SET display_name = $2, ai_enabled = $3 RETURNING *',
       [account, displayName, aiEnabled]
     );
     return res.rows[0];
   } catch (err) {
-    console.error(`Error updating account name \${account}:`, err);
+    console.error(`Error updating account name ${account}:`, err);
     throw err;
   }
 };
@@ -586,13 +586,13 @@ export const deleteAccount = async (account) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('DELETE FROM transactions WHERE account = \$1', [account]);
-    await client.query('DELETE FROM daily_balances WHERE account = \$1', [account]);
-    await client.query('DELETE FROM account_names WHERE account = \$1', [account]);
+    await client.query('DELETE FROM transactions WHERE account = $1', [account]);
+    await client.query('DELETE FROM daily_balances WHERE account = $1', [account]);
+    await client.query('DELETE FROM account_names WHERE account = $1', [account]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error(`Error deleting account \${account}:`, err);
+    console.error(`Error deleting account ${account}:`, err);
     throw err;
   } finally {
     client.release();
@@ -602,7 +602,7 @@ export const deleteAccount = async (account) => {
 export const createJob = async (type, payload) => {
   try {
     const res = await pool.query(
-      'INSERT INTO background_jobs (type, payload) VALUES (\$1, \$2) RETURNING id',
+      'INSERT INTO background_jobs (type, payload) VALUES ($1, $2) RETURNING id',
       [type, JSON.stringify(payload)]
     );
     return res.rows[0].id;
@@ -648,7 +648,7 @@ export const updateJob = async (id, updates) => {
     const res = await pool.query(query, params);
     return res.rows[0];
   } catch (err) {
-    console.error(`Error updating job \${id}:`, err);
+    console.error(`Error updating job ${id}:`, err);
     throw err;
   }
 };
@@ -665,19 +665,19 @@ export const getJobs = async () => {
 
 export const getJob = async (id) => {
   try {
-    const res = await pool.query('SELECT * FROM background_jobs WHERE id = \$1', [id]);
+    const res = await pool.query('SELECT * FROM background_jobs WHERE id = $1', [id]);
     return res.rows[0];
   } catch (err) {
-    console.error(`Error fetching job \${id}:`, err);
+    console.error(`Error fetching job ${id}:`, err);
     throw err;
   }
 };
 
 export const deleteJob = async (id) => {
   try {
-    await pool.query('DELETE FROM background_jobs WHERE id = \$1', [id]);
+    await pool.query('DELETE FROM background_jobs WHERE id = $1', [id]);
   } catch (err) {
-    console.error(`Error deleting job \${id}:`, err);
+    console.error(`Error deleting job ${id}:`, err);
     throw err;
   }
 };
@@ -687,7 +687,7 @@ export const saveWebPushSubscription = async (subscription) => {
     const { endpoint, keys } = subscription;
     await pool.query(
       `INSERT INTO web_push_subscriptions (endpoint, keys)
-       VALUES (\$1, \$2)
+       VALUES ($1, $2)
        ON CONFLICT (endpoint) DO UPDATE SET keys = EXCLUDED.keys`,
       [endpoint, JSON.stringify(keys)]
     );
@@ -709,7 +709,7 @@ export const getWebPushSubscriptions = async () => {
 
 export const deleteWebPushSubscription = async (endpoint) => {
   try {
-    await pool.query('DELETE FROM web_push_subscriptions WHERE endpoint = \$1', [endpoint]);
+    await pool.query('DELETE FROM web_push_subscriptions WHERE endpoint = $1', [endpoint]);
   } catch (err) {
     console.error('Error deleting web push subscription:', err);
     throw err;
@@ -804,7 +804,7 @@ export const getUnenrichedTransactions = async () => {
 export const upsertAIModel = async (name, displayName, description) => {
   try {
     await pool.query(
-      'INSERT INTO ai_models (name, display_name, description, updated_at) VALUES (\$1, \$2, \$3, CURRENT_TIMESTAMP) ON CONFLICT (name) DO UPDATE SET display_name = \$2, description = \$3, updated_at = CURRENT_TIMESTAMP',
+      'INSERT INTO ai_models (name, display_name, description, updated_at) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (name) DO UPDATE SET display_name = $2, description = $3, updated_at = CURRENT_TIMESTAMP',
       [name, displayName, description]
     );
   } catch (err) {
@@ -900,5 +900,149 @@ export const updateTransactionCategory = async (id, category) => {
   } catch (err) {
     console.error('Error updating transaction category:', err);
     throw err;
+  }
+};
+
+export const getLookalikeTransactions = async (matchKey, excludeId) => {
+  try {
+    const res = await pool.query(
+      `SELECT * FROM transactions 
+       WHERE metadata->>'match_key' = $1 
+       AND id != $2 
+       ORDER BY date DESC LIMIT 5`,
+      [matchKey, excludeId]
+    );
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching lookalike transactions:', err);
+    return [];
+  }
+};
+
+export const generateMatchKey = (tx) => {
+  if (tx.counterparty && tx.counterparty.toLowerCase() !== 'unknown') {
+    return `vendor:${tx.counterparty.trim()}`;
+  }
+  if (tx.name_description) {
+    const cleanDesc = tx.name_description.replace(/[^a-zA-Z0-9 ]/g, '').trim().substring(0, 50);
+    return `desc:${cleanDesc}`;
+  }
+  return null;
+};
+
+export const runCategorizationAudit = async (jobId) => {
+  const client = await pool.connect();
+  try {
+    if (jobId) await updateJob(jobId, { status: 'processing', progress: 0, log: 'Starting optimized categorization audit & backfill...' });
+    
+    // 1. Fetch all transactions
+    const txRes = await client.query('SELECT * FROM transactions ORDER BY id ASC');
+    const transactions = txRes.rows;
+    
+    // 2. Fetch all rules
+    const rulesRes = await client.query('SELECT * FROM rules WHERE is_active = true AND type = \'categorization\' AND is_proposed = false');
+    const catRules = rulesRes.rows;
+
+    // 3. Pre-calculate majority categories for all existing match_keys
+    const majorityMapRes = await client.query(`
+      WITH counts AS (
+        SELECT metadata->>'match_key' as mkey, metadata->>'ai_category' as cat, count(*) as cnt
+        FROM transactions
+        WHERE metadata->>'match_key' IS NOT NULL AND metadata->>'ai_category' IS NOT NULL
+        GROUP BY 1, 2
+      ),
+      ranked AS (
+        SELECT mkey, cat, cnt, ROW_NUMBER() OVER(PARTITION BY mkey ORDER BY cnt DESC) as rnk
+        FROM counts
+      )
+      SELECT mkey, cat FROM ranked WHERE rnk = 1
+    `);
+    const majorityMap = majorityMapRes.rows.reduce((acc, row) => {
+      acc[row.mkey] = row.cat;
+      return acc;
+    }, {});
+    
+    let processed = 0;
+    let updated = 0;
+    let reCategorized = 0;
+    
+    await client.query('BEGIN');
+
+    for (const tx of transactions) {
+      processed++;
+      if (jobId && processed % 100 === 0) {
+        await updateJob(jobId, { progress: Math.floor((processed / transactions.length) * 100) });
+      }
+
+      let newMetadata = tx.metadata || {};
+      let needsUpdate = false;
+      let currentCategory = newMetadata.ai_category;
+
+      // Ensure match_key is set
+      const matchKey = generateMatchKey(tx);
+      if (matchKey && newMetadata.match_key !== matchKey) {
+        newMetadata.match_key = matchKey;
+        needsUpdate = true;
+      }
+
+      // Check Rules First
+      let matchedRule = null;
+      for (const rule of catRules) {
+        try {
+          const regex = new RegExp(rule.pattern, 'i');
+          if ((tx.counterparty && regex.test(tx.counterparty)) || (tx.name_description && regex.test(tx.name_description))) {
+            matchedRule = rule;
+            break;
+          }
+        } catch(e) {}
+      }
+
+      if (matchedRule) {
+        if (currentCategory !== matchedRule.category || newMetadata.match_type !== 'rule') {
+           if (currentCategory !== matchedRule.category) reCategorized++;
+           newMetadata.ai_category = matchedRule.category;
+           newMetadata.match_type = 'rule';
+           newMetadata.matched_rule_id = matchedRule.id;
+           needsUpdate = true;
+        }
+      } else if (matchKey) {
+        const majorityCat = majorityMap[matchKey];
+        if (majorityCat) {
+           if (!currentCategory || (currentCategory !== majorityCat && !newMetadata.ai_enriched)) {
+              if (currentCategory && currentCategory !== majorityCat) reCategorized++;
+              newMetadata.ai_category = majorityCat;
+              newMetadata.match_type = 'similarity';
+              needsUpdate = true;
+           }
+        }
+      }
+
+      if (needsUpdate) {
+        await client.query(
+          'UPDATE transactions SET metadata = $1 WHERE id = $2',
+          [JSON.stringify(newMetadata), tx.id]
+        );
+        updated++;
+        
+        // Commit every 500 updates to manage transaction size
+        if (updated % 500 === 0) {
+          await client.query('COMMIT');
+          await client.query('BEGIN');
+        }
+      }
+    }
+    
+    await client.query('COMMIT');
+    
+    const logMsg = `Audit complete. Processed ${processed} txs. Updated metadata for ${updated}. Re-categorized ${reCategorized}.`;
+    if (jobId) await updateJob(jobId, { status: 'completed', progress: 100, log: logMsg });
+    console.log(logMsg);
+    
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Audit failed', err);
+    if (jobId) await updateJob(jobId, { status: 'failed', error: err.message });
+  } finally {
+    client.release();
   }
 };

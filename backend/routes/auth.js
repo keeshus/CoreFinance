@@ -6,6 +6,10 @@ import { pool } from '../../shared/db.js';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-me';
 
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('FATAL: JWT_SECRET must be set in production');
+}
+
 // Simple registration (should be restricted in production)
 router.post('/register', async (req, res) => {
   const { password } = req.body;

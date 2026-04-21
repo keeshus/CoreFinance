@@ -7,7 +7,10 @@ import { AIService } from '../../shared/services/ai.js';
 import { toDateStr, validateBalanceMovements } from '../../shared/utils/validation.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit per file
+});
 
 const getUploadFiles = (req) => {
   const txFile = req.files?.['transactionFile']?.[0];
