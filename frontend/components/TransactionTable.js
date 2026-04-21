@@ -5,12 +5,13 @@ import CategoryBadge from './CategoryBadge';
 export default function TransactionTable({ 
   transactions, 
   loading, 
-  sortField, 
-  sortOrder, 
-  toggleSort, 
+  sortField,
+  toggleSort,
   setSelectedTransaction, 
   formatDate, 
-  formatCurrency 
+  formatCurrency,
+  deviationsOnly,
+  onResolve
 }) {
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -39,6 +40,11 @@ export default function TransactionTable({
             <th className="hide-mobile" style={{ padding: '15px 20px' }}>
               Counterparty
             </th>
+            {deviationsOnly && (
+              <th style={{ padding: '15px 20px', textAlign: 'center' }}>
+                Resolve
+              </th>
+            )}
             <th 
               onClick={() => toggleSort('amount')}
               style={{ padding: '15px 20px', textAlign: 'right', cursor: 'pointer', userSelect: 'none', width: '120px' }}
@@ -105,6 +111,24 @@ export default function TransactionTable({
               <td className="hide-mobile" style={{ padding: '12px 20px', fontSize: '0.8em', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.counterparty || '-'}
               </td>
+              {deviationsOnly && (
+                <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onResolve(t.id, 'accepted'); }}
+                      style={{ padding: '4px 8px', borderRadius: '4px', background: t.metadata?.review_status === 'accepted' ? '#22c55e' : '#f0fdf4', color: t.metadata?.review_status === 'accepted' ? '#fff' : '#16a34a', border: 'none', cursor: 'pointer', fontSize: '0.75em', fontWeight: 'bold' }}
+                    >
+                      Accept
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onResolve(t.id, 'negated'); }}
+                      style={{ padding: '4px 8px', borderRadius: '4px', background: t.metadata?.review_status === 'negated' ? '#ef4444' : '#fef2f2', color: t.metadata?.review_status === 'negated' ? '#fff' : '#dc2626', border: 'none', cursor: 'pointer', fontSize: '0.75em', fontWeight: 'bold' }}
+                    >
+                      Negate
+                    </button>
+                  </div>
+                </td>
+              )}
               <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85em', color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e' }}>
                 {formatCurrency(t.amount)}
               </td>
@@ -112,7 +136,7 @@ export default function TransactionTable({
           ))}
           {(!transactions || transactions.length === 0) && (
             <tr>
-              <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9em' }}>
+              <td colSpan={deviationsOnly ? "6" : "5"} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9em' }}>
                 {loading ? 'Loading...' : 'No transactions found.'}
               </td>
             </tr>

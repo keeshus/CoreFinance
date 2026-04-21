@@ -100,7 +100,7 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
               </div>
               {editingAnomaly ? (
                 <div style={{ marginTop: '10px' }}>
-                  <input type="text" value={newAnomalyReason} onChange={e => setNewAnomalyReason(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #fecaca', marginBottom: '10px' }} placeholder="Reason for deviation" />
+                  <input type="text" value={newAnomalyReason} onChange={e => setNewAnomalyReason(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #fecaca', marginBottom: '10px', boxSizing: 'border-box' }} placeholder="Reason for deviation" />
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button onClick={async () => {
                       try {
@@ -162,7 +162,7 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
               </div>
               {editingRuleViolations ? (
                 <div style={{ marginTop: '10px' }}>
-                  <input type="text" value={newRuleViolations} onChange={e => setNewRuleViolations(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #fcd34d', marginBottom: '10px' }} placeholder="Rule violation reasons" />
+                  <input type="text" value={newRuleViolations} onChange={e => setNewRuleViolations(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #fcd34d', marginBottom: '10px', boxSizing: 'border-box' }} placeholder="Rule violation reasons" />
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button onClick={async () => {
                       try {
@@ -200,7 +200,7 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
                   ...transaction,
                   metadata: {
                     ...transaction.metadata,
-                    rule_violations: ['']
+                    rule_violations: ['New violation']
                   }
                 }, true);
               }} style={{ background: '#d97706', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8em', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -266,9 +266,11 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
           )}
         </div>
 
-        {((transaction.metadata?.is_anomalous) || (transaction.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0)) && (!transaction.metadata?.review_status || (transaction.metadata.review_status !== 'accepted' && transaction.metadata.review_status !== 'negated')) && !editingAnomaly && !editingRuleViolations && (
+        {((transaction.metadata?.is_anomalous) || (transaction.metadata?.rule_violations?.filter(v => v && v !== 'none' && v !== 'None').length > 0)) && !editingAnomaly && !editingRuleViolations && (
           <div style={{ background: '#f1f5f9', padding: '15px', borderRadius: '16px', border: '1px solid #cbd5e1', marginTop: '10px' }}>
-            <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#334155', marginBottom: '10px' }}>Resolve Deviation</div>
+            <div style={{ fontSize: '0.85em', fontWeight: 'bold', color: '#334155', marginBottom: '10px' }}>
+              {transaction.metadata?.review_status ? `Deviation Resolved (${transaction.metadata.review_status}) - Update Status` : 'Resolve Deviation'}
+            </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={async () => {
                 try {
@@ -290,7 +292,7 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
               }} style={{ flex: 1, background: '#ef4444', color: '#fff', border: 'none', padding: '10px', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' }}>Negate (Ignore)</button>
             </div>
             <div style={{ fontSize: '0.7em', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
-              This will resolve the transaction and clear it from the deviations queue.
+              This will mark the deviation as resolved.
             </div>
           </div>
         )}

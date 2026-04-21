@@ -265,7 +265,7 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
         onUpdate={(updatedTx, skipRefetch = false) => {
-          setSelectedTransaction(updatedTx);
+          setSelectedTransaction(prev => ({ ...prev, ...updatedTx }));
           if (!skipRefetch) {
             fetchTransactions({
               page: currentPage, pageSize, account: selectedAccount,
@@ -595,6 +595,20 @@ export default function DashboardView({ summary, trend, transactions, fetchTrans
           setSelectedTransaction={setSelectedTransaction}
           formatDate={formatDate}
           formatCurrency={formatCurrency}
+          deviationsOnly={deviationsOnly}
+          onResolve={async (transactionId, status) => {
+            try {
+              await api.patch(`/transactions/${transactionId}/resolve`, { status });
+              fetchTransactions({
+                page: currentPage, pageSize, account: selectedAccount,
+                category: categoryFilter.length > 0 ? categoryFilter : 'all',
+                search: searchQuery, startDate: dateFilter.start, endDate: dateFilter.end,
+                sortField, sortOrder, deviationsOnly
+              });
+            } catch (err) {
+              alert('Failed to resolve deviation');
+            }
+          }}
         />
 
         {totalPages > 1 && (

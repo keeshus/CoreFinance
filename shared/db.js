@@ -212,7 +212,6 @@ export const getTransactions = async (filters = {}) => {
             WHERE v::text != '"none"' AND v::text != '"None"'
           )
         ))
-        AND (t.metadata->>'review_status' IS NULL OR (t.metadata->>'review_status' != 'accepted' AND t.metadata->>'review_status' != 'negated'))
       )`;
     }
 
