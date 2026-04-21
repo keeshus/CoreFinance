@@ -1,5 +1,5 @@
 import express from 'express';
-import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob } from '../../shared/db.js';
+import { getJob, getJobs, deleteJob, getTransactionsByIds, updateJob, createJob } from '../../shared/db.js';
 import { aiQueue, pontoQueue } from '../../shared/queue.js';
 
 const router = express.Router();
@@ -107,6 +107,17 @@ router.post('/:id/retry', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to retry job' });
+  }
+});
+
+router.post('/audit', async (req, res) => {
+  try {
+    const jobId = await createJob('categorization-audit', {});
+    await aiQueue.add('categorization-audit', { jobId });
+    res.json({ message: 'Audit job started', job_id: jobId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to start audit job' });
   }
 });
 

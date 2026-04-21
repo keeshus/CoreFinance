@@ -21,6 +21,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'default-dev-key';
 
 import { runPontoSync } from './pontoWorker.js';
+import { runCategorizationAudit } from '../shared/db.js';
 
 const pingBackend = async () => {
   if (!INTERNAL_API_KEY) {
@@ -70,7 +71,11 @@ setInterval(() => {
 }, 1000);
 
 const worker = new Worker('ai-processing', async (job) => {
-  if (job.name === 'analyze-chunk') {
+  if (job.name === 'categorization-audit') {
+    const { jobId } = job.data;
+    await runCategorizationAudit(jobId);
+    return;
+  } else if (job.name === 'analyze-chunk') {
     const { 
       transactions, 
       jobId, 

@@ -2,9 +2,19 @@ import React, { useState } from 'react';
 import { X, Info, FileText, Globe, AlertCircle, ShieldCheck } from 'lucide-react';
 import CategoryBadge, { CATEGORY_MAP } from './CategoryBadge';
 import { api } from '../services/api';
+import { useEffect } from 'react';
 
 export default function TransactionDetailsModal({ transaction, onClose, onUpdate, formatCurrency, formatDate }) {
   const [editingCategory, setEditingCategory] = useState(false);
+  const [lookalikes, setLookalikes] = useState([]);
+  
+  useEffect(() => {
+    if (transaction?.metadata?.match_key) {
+      api.get(`/transactions/${transaction.id}/lookalikes?matchKey=${encodeURIComponent(transaction.metadata.match_key)}`)
+         .then(res => setLookalikes(res.data || []))
+         .catch(() => setLookalikes([]));
+    }
+  }, [transaction?.id, transaction?.metadata?.match_key]);
   const [newCategoryValue, setNewCategoryValue] = useState('');
   const [editingAnomaly, setEditingAnomaly] = useState(false);
   const [newAnomalyReason, setNewAnomalyReason] = useState('');
@@ -75,6 +85,26 @@ export default function TransactionDetailsModal({ transaction, onClose, onUpdate
             <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}>Counterparty</div>
               <div style={{ fontSize: '0.9em', color: '#1e293b', wordBreak: 'break-word' }}>{transaction.counterparty}</div>
+            </div>
+          )}
+          
+          {lookalikes.length > 0 && (
+            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.75em', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 'bold', marginBottom: '8px' }}>Lookalike Transactions (Same {transaction.metadata.match_type || 'Pattern'})</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {lookalikes.map(l => (
+                   <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85em', padding: '8px', background: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                     <div>
+                       <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{l.name_description}</div>
+                       <div style={{ color: '#64748b' }}>{formatDate(l.date, l.time)}</div>
+                     </div>
+                     <div style={{ textAlign: 'right' }}>
+                       <div style={{ fontWeight: 'bold', color: parseFloat(l.amount) < 0 ? '#ef4444' : '#22c55e' }}>{formatCurrency(l.amount)}</div>
+                       <CategoryBadge category={l.metadata?.ai_category} />
+                     </div>
+                   </div>
+                ))}
+              </div>
             </div>
           )}
 

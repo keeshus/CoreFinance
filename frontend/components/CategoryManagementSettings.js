@@ -47,15 +47,30 @@ export default function CategoryManagementSettings({
         <h3 style={{ margin: 0, fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
           <CheckCircle size={20} color="#10b981" /> Transaction Categories
         </h3>
-        <button 
-          onClick={() => {
-            setIsAddingCategory(true);
-            setEditCategoryData({ name: '', description: '' });
-          }}
-          style={{ padding: '8px 16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-        >
-          <Plus size={16} /> Add Category
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={async () => {
+              try {
+                await fetch('/api/jobs/audit', { method: 'POST' });
+                showNotification('Categorization audit job started. Check Jobs page.', 'success');
+              } catch (e) {
+                showNotification('Failed to start audit job', 'error');
+              }
+            }}
+            style={{ padding: '8px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+          >
+            Run Categorization Audit
+          </button>
+          <button
+            onClick={() => {
+              setIsAddingCategory(true);
+              setEditCategoryData({ name: '', description: '' });
+            }}
+            style={{ padding: '8px 16px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+          >
+            <Plus size={16} /> Add Category
+          </button>
+        </div>
       </div>
 
       {isAddingCategory && (

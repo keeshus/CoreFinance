@@ -1,5 +1,5 @@
 import express from 'express';
-import { getTransactions, getSummary, getTrend, updateTransactionCategory, resolveTransactionDeviation, updateTransactionAnomaly, updateTransactionRuleViolations } from '../../shared/db.js';
+import { getTransactions, getSummary, getTrend, updateTransactionCategory, resolveTransactionDeviation, updateTransactionAnomaly, updateTransactionRuleViolations, getLookalikeTransactions } from '../../shared/db.js';
 
 const router = express.Router();
 
@@ -130,6 +130,21 @@ router.patch('/:id/rule-violations', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update rule violations' });
+  }
+});
+
+router.get('/:id/lookalikes', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { matchKey } = req.query;
+    if (!matchKey) {
+      return res.json([]);
+    }
+    const lookalikes = await getLookalikeTransactions(matchKey, parseInt(id));
+    res.json(lookalikes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch lookalikes' });
   }
 });
 
