@@ -74,7 +74,7 @@ const worker = new Worker('ai-processing', async (job) => {
   if (job.name === 'categorization-audit') {
     const { jobId } = job.data;
     await runCategorizationAudit(jobId);
-    return;
+
   } else if (job.name === 'analyze-chunk') {
     const { 
       transactions, 
