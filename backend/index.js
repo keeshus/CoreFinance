@@ -11,6 +11,7 @@ import jobRoutes from './routes/jobs.js';
 import pontoRoutes from './routes/ponto.js';
 import authRoutes from './routes/auth.js';
 import notificationsRoutes from './routes/notifications.js';
+import subscriptionRoutes from './routes/subscriptions.js';
 import { authenticateToken } from './middleware/auth.js';
 import { pontoQueue } from '../shared/queue.js';
 
@@ -77,6 +78,7 @@ app.use('/api/rules', authenticateToken, rulesRoutes);
 app.use('/api/jobs', authenticateToken, jobRoutes);
 app.use('/api/integrations/ponto', authenticateToken, pontoRoutes);
 app.use('/api/notifications', authenticateToken, notificationsRoutes);
+app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
 
 const startServer = async () => {
   // Start listening immediately so healthchecks pass while we initialize

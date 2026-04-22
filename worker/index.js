@@ -22,7 +22,7 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'default-dev-key';
 
 import { runPontoSync } from './pontoWorker.js';
 import { runCategorizationAudit, localCategorizeTransactions } from '../shared/db.js';
-import { aiCategorizationQueue, anomalyDetectionQueue, flowProducer } from '../shared/queue.js';
+import { aiCategorizationQueue, anomalyDetectionQueue, detectSubscriptionsQueue, flowProducer } from '../shared/queue.js';
 
 const pingBackend = async () => {
   if (!INTERNAL_API_KEY) {
@@ -75,7 +75,10 @@ const worker = new Worker('ai-processing', async (job) => {
   console.log(`[Worker] Received job: ${job.name} (ID: ${job.id})`);
   if (job.name === 'categorization-audit') {
     const { jobId } = job.data;
-    return await runCategorizationAudit(jobId);
+    const result = await runCategorizationAudit(jobId);
+    const subJobId = await createJob('detect-subscriptions', { parentJobId: jobId });
+    await detectSubscriptionsQueue.add('detect-subscriptions', { jobId: subJobId, parentJobId: jobId });
+    return result;
   } else if (job.name === 'analyze-chunk') {
     const { 
       transactions, 
@@ -261,16 +264,20 @@ worker.on('failed', (job, err) => {
 });
 
 // New separated workers
+
 new Worker('local-categorization', async (job) => {
   const { jobId, transactionIds } = job.data;
   console.log(`[Worker] Running local-categorization for job ${jobId}`);
+  const { localCategorizeTransactions } = await import('../shared/db.js');
   await localCategorizeTransactions(jobId, transactionIds);
   
   // Enqueue next step
+  const { aiCategorizationQueue } = await import('../shared/queue.js');
   await aiCategorizationQueue.add('ai-categorization', { jobId, transactionIds });
 }, { connection, lockDuration: 120000, concurrency: 1 });
 
 new Worker('ai-categorization', async (job) => {
+  if (job.name === 'ai-categorization') {
   const { jobId, transactionIds } = job.data;
   console.log(`[Worker] Running ai-categorization for job ${jobId}`);
   
@@ -278,7 +285,8 @@ new Worker('ai-categorization', async (job) => {
   const aiConfig = await getSettings('ai_config');
   if (!aiConfig || !aiConfig.enabled) {
      await updateJob(jobId, { log: 'AI categorization disabled, skipping.' });
-     await anomalyDetectionQueue.add('anomaly-detection', { jobId, transactionIds });
+     const subJobId = await createJob('detect-subscriptions', { parentJobId: jobId });
+     await detectSubscriptionsQueue.add('detect-subscriptions', { jobId: subJobId, parentJobId: jobId, transactionIds });
      return;
   }
   
@@ -288,7 +296,7 @@ new Worker('ai-categorization', async (job) => {
   
   if (uncategorizedTxs.length === 0) {
      await updateJob(jobId, { log: 'No uncategorized transactions to process with AI.' });
-     await anomalyDetectionQueue.add('anomaly-detection', { jobId, transactionIds });
+     await detectSubscriptionsQueue.add('detect-subscriptions', { jobId, transactionIds });
      return;
   }
   
@@ -324,11 +332,9 @@ new Worker('ai-categorization', async (job) => {
       opts: { attempts: 3, removeOnComplete: true }
     }))
   });
-}, { connection, lockDuration: 120000, concurrency: 1 });
-
-new Worker('ai-categorization', async (job) => {
-  if (job.name === 'analyze-chunk-cat' || job.name === 'analyze-chunk-anomaly') {
+  } else if (job.name === 'analyze-chunk-cat' || job.name === 'analyze-chunk-anomaly') {
     const { transactions, jobId, chunkNum, totalChunks, activeRules, config, jobType } = job.data;
+    const { AIService } = await import('../shared/services/ai.js');
     const aiService = new AIService(config, async (msg) => { console.log(msg); await updateJob(jobId, { log: msg }); });
     let currentTransactions = [...transactions];
     let enrichedIds = new Set();
@@ -338,6 +344,7 @@ new Worker('ai-categorization', async (job) => {
       historicalContext: jobType === 'anomaly' ? await aiService.getHistoricalContext() : [],
       onTransactionEnriched: async (enriched) => {
         try {
+          const { addRule } = await import('../shared/db.js');
           const numericId = parseInt(enriched.id);
           if (isNaN(numericId)) return;
           await pool.query(
@@ -361,11 +368,13 @@ new Worker('ai-categorization', async (job) => {
     const { jobId, parentJobId, transactionIds } = job.data;
     await updateJob(jobId, { status: 'completed', progress: 100, log: 'AI Categorization completed.' });
     await updateJob(parentJobId, { log: 'AI Categorization completed.' });
-    await anomalyDetectionQueue.add('anomaly-detection', { jobId: parentJobId, transactionIds });
+    const subJobId = await createJob('detect-subscriptions', { parentJobId });
+    await detectSubscriptionsQueue.add('detect-subscriptions', { jobId: subJobId, parentJobId, transactionIds });
   } else if (job.name === 'finalize-ai-anomaly') {
     const { jobId, parentJobId, transactionIds } = job.data;
     await updateJob(jobId, { status: 'completed', progress: 100, log: 'Anomaly Detection completed.' });
     await updateJob(parentJobId, { status: 'completed', progress: 100, log: 'Job pipeline fully completed.' });
+    // Subscriptions handled before anomaly detection
     
     // Notification logic
     const { sendPushNotification } = await import('../shared/notifications.js');
@@ -380,8 +389,8 @@ new Worker('ai-categorization', async (job) => {
     }
   }
 }, { connection, lockDuration: 120000, concurrency: 5 });
-
-new Worker('anomaly-detection', async (job) => {
+new Worker('anomaly-detection'
+, async (job) => {
   const { jobId, transactionIds } = job.data;
   console.log(`[Worker] Running anomaly-detection for job ${jobId}`);
   
@@ -389,6 +398,7 @@ new Worker('anomaly-detection', async (job) => {
   const aiConfig = await getSettings('ai_config');
   if (!aiConfig || !aiConfig.enabled) {
      await updateJob(jobId, { status: 'completed', progress: 100, log: 'Job pipeline fully completed (AI disabled).' });
+     // Subscriptions handled before anomaly detection
      return;
   }
   
@@ -427,4 +437,97 @@ new Worker('anomaly-detection', async (job) => {
       opts: { attempts: 3, removeOnComplete: true }
     }))
   });
+}, { connection, lockDuration: 120000, concurrency: 1 });
+
+new Worker('detect-subscriptions', async (job) => {
+  const { jobId, transactionIds } = job.data;
+  console.log(`[Worker] Running detect-subscriptions for job ${jobId}`);
+  
+  const { getSubscriptionGroupsForDetection, addSubscription, getSettings, updateJob } = await import('../shared/db.js');
+  const aiConfig = await getSettings('ai_config');
+  if (!aiConfig || !aiConfig.enabled) {
+     if (jobId) await updateJob(jobId, { log: 'Subscription detection skipped (AI disabled).' });
+     return;
+  }
+
+  if (jobId) await updateJob(jobId, { status: 'processing', progress: 0, log: 'Starting subscription detection...' });
+  
+  try {
+    const groups = await getSubscriptionGroupsForDetection(transactionIds);
+    if (groups.length === 0) {
+       if (jobId) await updateJob(jobId, { status: 'completed', progress: 100, log: 'No new subscription groups found.' });
+       return;
+    }
+
+    const aiService = new AIService(aiConfig, async (msg) => { 
+      console.log(msg); 
+      if (jobId) await updateJob(jobId, { log: msg }); 
+    });
+
+    const { getRules } = await import('../shared/db.js');
+    const allRules = await getRules();
+    const subRules = allRules.filter(r => r.type === 'subscription' && r.is_active);
+    
+    let addedCount = 0;
+    let remainingGroups = [];
+
+    // Local Rules Pass
+    for (const group of groups) {
+      let matched = false;
+      const sampleTx = group.transactions[0];
+      const searchText = `${sampleTx.counterparty || ''} ${sampleTx.name_description || ''}`.toLowerCase();
+
+      for (const rule of subRules) {
+        if (searchText.includes(rule.pattern.toLowerCase())) {
+          await addSubscription(
+            group.match_key,
+            rule.name,
+            rule.category || 'Subscriptions',
+            group.avg_amount,
+            'monthly', // Default for local rules if not specified
+            null
+          );
+          addedCount++;
+          matched = true;
+          if (jobId) await updateJob(jobId, { log: `Local match for ${rule.name} (${group.match_key})` });
+          break;
+        }
+      }
+      if (!matched) remainingGroups.push(group);
+    }
+
+    if (remainingGroups.length > 0) {
+      const results = await aiService.detectSubscriptionsFromGroups(remainingGroups);
+      for (const res of results) {
+        if (res.is_subscription) {
+          const group = remainingGroups.find(g => g.match_key === res.match_key);
+          if (group) {
+             await addSubscription(
+               res.match_key, 
+               res.name || 'Unknown Subscription', 
+               res.category || 'Subscriptions', 
+               group.avg_amount, 
+               res.frequency || 'monthly', 
+               null
+             );
+             addedCount++;
+          }
+        }
+      }
+    }
+
+    if (jobId) await updateJob(jobId, { status: 'completed', progress: 100, log: `Subscription detection completed. Added ${addedCount} new subscriptions.` });
+    
+    // Chain to anomaly detection only if we have specific transaction IDs (from a sync)
+    // Avoids massive job spam during global audits
+    if (transactionIds && Array.isArray(transactionIds) && transactionIds.length > 0) {
+      const { anomalyDetectionQueue } = await import('../shared/queue.js');
+      await anomalyDetectionQueue.add('anomaly-detection', { jobId, transactionIds });
+    } else if (jobId) {
+      await updateJob(jobId, { status: 'completed', progress: 100, log: 'Subscription detection completed. Skipping anomaly detection for global audit.' });
+    }
+  } catch (err) {
+    console.error('Subscription detection failed', err);
+    if (jobId) await updateJob(jobId, { status: 'failed', error: err.message });
+  }
 }, { connection, lockDuration: 120000, concurrency: 1 });

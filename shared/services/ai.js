@@ -237,6 +237,71 @@ export class AIService {
     }
   }
 
+  async detectSubscriptionsFromGroups(groups, activeRules = []) {
+    const model = this.genAI.getGenerativeModel({
+      model: this.modelName,
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: SchemaType.ARRAY,
+          items: {
+            type: SchemaType.OBJECT,
+            properties: {
+              match_key: { type: SchemaType.STRING },
+              is_subscription: { type: SchemaType.BOOLEAN },
+              frequency: { type: SchemaType.STRING },
+              category: { type: SchemaType.STRING },
+              name: { type: SchemaType.STRING }
+            },
+            required: ['match_key', 'is_subscription']
+          }
+        }
+      }
+    });
+
+    const dbCategories = await getSettings('categories') || [];
+    const categoryNames = dbCategories.map(c => c.name).join(', ');
+
+    const prompt = `
+      You are a financial analysis assistant specializing in detecting recurring payments and subscriptions.
+      I am providing you with groups of lookalike transactions. Each group shares the same 'match_key'.
+      
+      For each group, analyze the transactions, their average amount, frequency of dates, and counterparty.
+      Determine if the group represents a recurring subscription, utility bill, insurance, rent, or similar periodic payment.
+      
+      Return a JSON array of objects, one for each input group.
+      
+      ### Available Categories:
+      ${categoryNames}
+      
+      ### Input Groups:
+      ${JSON.stringify(groups)}
+      
+      ### Output Requirements:
+      - 'match_key': The match_key of the group.
+      - 'is_subscription': true if it's a recurring payment/subscription, false otherwise.
+      - 'frequency': If true, provide the frequency (e.g., 'monthly', 'yearly', 'weekly', 'quarterly').
+      - 'category': If true, provide the best matching category from the available list.
+      - 'name': If true, provide a clean, readable name for the subscription (e.g., 'Netflix', 'Health Insurance').
+      
+      Return ONLY a JSON array of objects.
+    `;
+
+    this.logger(`Sending ${groups.length} groups to AI for subscription detection.`);
+    
+    try {
+      const result = await model.generateContent(prompt);
+      const fullText = result.response.text();
+      const cleanText = fullText.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+      const parsed = JSON.parse(cleanText);
+      this.logger(`Successfully parsed ${parsed.length} subscription results.`);
+      return parsed;
+    } catch (err) {
+      this.logger(`AI Subscription detection failed: ${err.message}`);
+      throw err;
+    }
+  }
+
   static async listModels(apiKey) {
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);

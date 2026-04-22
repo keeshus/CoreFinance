@@ -712,6 +712,29 @@ export default function SettingsView({
             })}
          </div>
       </div>
+      {/* Data Maintenance Section */}
+      <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', border: '1px solid #e2e8f0' }}>
+         <h3 style={{ margin: '0 0 10px', fontSize: '1.2em', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '12px' }}>
+           <RefreshCw size={20} color="#3b82f6" /> Data Maintenance
+         </h3>
+         <p style={{ color: '#64748b', fontSize: '0.9em', marginBottom: '20px' }}>
+           Re-categorize all transactions and re-detect subscriptions across your entire history using the latest rules and AI models. This process runs in the background and may take several minutes.
+         </p>
+         <button
+            onClick={async () => {
+              if (!confirm('This will re-process your entire transaction history. Are you sure?')) return;
+              try {
+                await api.post('/jobs/audit', {});
+                showNotification('System re-analysis job started. Check Background Jobs page.', 'success');
+              } catch (e) {
+                showNotification('Failed to start analysis: ' + e.message, 'error');
+              }
+            }}
+            style={{ padding: '12px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <RefreshCw size={18} /> Run Full System Re-Analysis
+          </button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Upload as UploadIcon, Settings as SettingsIcon, DollarSign, TrendingUp, Activity, ShieldCheck, LogOut, Bell, CheckCircle, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, Upload as UploadIcon, Settings as SettingsIcon, DollarSign, TrendingUp, Activity, ShieldCheck, LogOut, Bell, CheckCircle, AlertCircle, Repeat } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function AppLayout({ children, activeTab, setActiveTab, totalAssets, accountCount, onLogout}) {
@@ -76,6 +76,7 @@ export default function AppLayout({ children, activeTab, setActiveTab, totalAsse
 
   const tabs = [
     { id: 'overview', icon: <LayoutDashboard size={16} />, label: 'Dashboard' },
+    { id: 'subscriptions', icon: <Repeat size={16} />, label: 'Subscriptions' },
     { id: 'upload', icon: <UploadIcon size={16} />, label: 'CSV Import', desktopOnly: true },
     { id: 'rules', icon: <ShieldCheck size={16} />, label: 'Smart Rules' },
     { id: 'jobs', icon: <Activity size={16} />, label: 'Background Jobs', desktopOnly: true },

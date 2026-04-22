@@ -50,19 +50,6 @@ export default function CategoryManagementSettings({
         </h3>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
-            onClick={async () => {
-              try {
-                await api.post('/jobs/audit', {});
-                showNotification('Categorization audit job started. Check Jobs page.', 'success');
-              } catch (e) {
-                showNotification('Failed to start audit job: ' + e.message, 'error');
-              }
-            }}
-            style={{ padding: '8px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-          >
-            Run Categorization Audit
-          </button>
-          <button
             onClick={() => {
               setIsAddingCategory(true);
               setEditCategoryData({ name: '', description: '' });

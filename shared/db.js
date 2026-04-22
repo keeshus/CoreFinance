@@ -139,6 +139,20 @@ export const initDb = async () => {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id SERIAL PRIMARY KEY,
+        match_key TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT,
+        amount DECIMAL(12, 2),
+        frequency TEXT,
+        next_billing_date DATE,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Ensure refresh_token is nullable for Client Credentials flow
     await client.query(`
       ALTER TABLE ponto_tokens ALTER COLUMN refresh_token DROP NOT NULL;
@@ -815,7 +829,7 @@ export const upsertAIModel = async (name, displayName, description) => {
 
 export const getAIModels = async () => {
   try {
-    const res = await pool.query('SELECT * FROM ai_models ORDER BY display_name ASC');
+    const res = await pool.query('SELECT * FROM ai_models ORDER BY display_name ;ASC');
     return res.rows;
   } catch (err) {
     console.error('Error fetching AI models:', err);
@@ -1172,5 +1186,91 @@ export const runCategorizationAudit = async (jobId) => {
     if (jobId) await updateJob(jobId, { status: 'failed', error: err.message });
   } finally {
     client.release();
+  }
+};
+
+export const getSubscriptions = async () => {
+  try {
+    const res = await pool.query('SELECT * FROM subscriptions WHERE is_active = true ORDER BY next_billing_date ASC NULLS LAST');
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching subscriptions:', err);
+    return [];
+  }
+};
+
+export const getSubscriptionGroupsForDetection = async (transactionIds = null) => {
+  try {
+    let query = `
+      WITH relevant_match_keys AS (
+        SELECT DISTINCT metadata->>'match_key' as mkey
+        FROM transactions
+        WHERE metadata->>'match_key' IS NOT NULL
+          ${transactionIds ? 'AND id = ANY($1)' : ''}
+      )
+      SELECT metadata->>'match_key' as match_key,
+             COUNT(*) as tx_count,
+             MIN(date) as first_date,
+             MAX(date) as last_date,
+             AVG(amount) as avg_amount,
+             json_agg(json_build_object('id', id, 'date', date, 'amount', amount, 'counterparty', counterparty, 'name_description', name_description)) as transactions
+      FROM transactions
+      WHERE metadata->>'match_key' IN (SELECT mkey FROM relevant_match_keys)
+        AND metadata->>'match_key' NOT IN (SELECT match_key FROM subscriptions)
+      GROUP BY metadata->>'match_key'
+      HAVING COUNT(*) >= 2
+    `;
+    const params = transactionIds ? [transactionIds] : [];
+    const res = await pool.query(query, params);
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching subscription groups:', err);
+    return [];
+  }
+};
+
+export const addSubscription = async (matchKey, name, category, amount, frequency, nextBillingDate) => {
+  try {
+    const query = `
+      INSERT INTO subscriptions (match_key, name, category, amount, frequency, next_billing_date)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (match_key) DO UPDATE 
+      SET name = EXCLUDED.name, category = EXCLUDED.category, amount = EXCLUDED.amount, frequency = EXCLUDED.frequency, next_billing_date = EXCLUDED.next_billing_date, is_active = true
+      RETURNING *;
+    `;
+    const values = [matchKey, name, category, amount, frequency, nextBillingDate];
+    const res = await pool.query(query, values);
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error adding subscription:', err);
+    throw err;
+  }
+};
+
+export const updateSubscription = async (id, updates) => {
+  try {
+    const fields = Object.keys(updates);
+    const values = Object.values(updates);
+    if (fields.length === 0) return null;
+
+    const setClause = fields.map((field, idx) => `${field} = $${idx + 1}`).join(', ');
+    values.push(id);
+    const query = `UPDATE subscriptions SET ${setClause} WHERE id = $${values.length} RETURNING *`;
+    
+    const res = await pool.query(query, values);
+    return res.rows[0];
+  } catch (err) {
+    console.error('Error updating subscription:', err);
+    throw err;
+  }
+};
+
+export const deleteSubscription = async (id) => {
+  try {
+    await pool.query('UPDATE subscriptions SET is_active = false WHERE id = $1', [id]);
+    return true;
+  } catch (err) {
+    console.error('Error deleting subscription:', err);
+    return false;
   }
 };

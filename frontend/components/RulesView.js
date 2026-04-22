@@ -197,6 +197,10 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                  <input type="radio" checked={newRuleType === 'categorization'} onChange={() => setNewRuleType('categorization')} />
                  Categorization
                </label>
+               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85em' }}>
+                 <input type="radio" checked={newRuleType === 'subscription'} onChange={() => setNewRuleType('subscription')} />
+                 Subscription
+               </label>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                 <input 
@@ -244,11 +248,11 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                 )}
                 <button 
                   onClick={handleAddRule}
-                  disabled={newRuleType === 'categorization' && !newCategory}
+                  disabled={(newRuleType === 'categorization' || newRuleType === 'subscription') && !newCategory}
                   style={{ 
                     padding: '12px 20px', background: '#10b981', color: '#fff', border: 'none', 
                     borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer',
-                    opacity: (newRuleType === 'categorization' && !newCategory) ? 0.5 : 1,
+                    opacity: ((newRuleType === 'categorization' || newRuleType === 'subscription') && !newCategory) ? 0.5 : 1,
                     flexShrink: 0
                   }}
                 >
@@ -285,6 +289,7 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                <option value="all">All Types</option>
                <option value="validation">Validation</option>
                <option value="categorization">Categorization</option>
+               <option value="subscription">Subscription</option>
              </select>
              <select
                value={ruleCategoryFilter}
@@ -321,6 +326,7 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                           >
                             <option value="validation">Validation</option>
                             <option value="categorization">Categorization</option>
+                            <option value="subscription">Subscription</option>
                           </select>
                           <input 
                             value={editName}
@@ -368,7 +374,12 @@ export default function RulesView({ rules, categories, onAddRule, onUpdateRuleSt
                     ) : (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '0.6em', padding: '2px 6px', borderRadius: '6px', background: rule.type === 'categorization' ? '#fce7f3' : '#e0e7ff', color: rule.type === 'categorization' ? '#be185d' : '#4338ca', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                          <span style={{ 
+                            fontSize: '0.6em', padding: '2px 6px', borderRadius: '6px', 
+                            background: rule.type === 'categorization' ? '#fce7f3' : (rule.type === 'subscription' ? '#dcfce7' : '#e0e7ff'), 
+                            color: rule.type === 'categorization' ? '#be185d' : (rule.type === 'subscription' ? '#166534' : '#4338ca'), 
+                            fontWeight: 'bold', textTransform: 'uppercase' 
+                          }}>
                             {rule.type || 'val'}
                           </span>
                           <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '0.9em' }}>{rule.name}</span>

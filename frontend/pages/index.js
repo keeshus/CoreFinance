@@ -5,6 +5,7 @@ import UploadView from '../components/UploadView';
 import SettingsView from '../components/SettingsView';
 import RulesView from '../components/RulesView';
 import JobsView from '../components/JobsView';
+import SubscriptionsView from '../components/SubscriptionsView';
 import { useFinanceData } from '../hooks/useFinanceData';
 import { useSettings } from '../hooks/useSettings';
 import { api } from '../services/api';
@@ -274,6 +275,10 @@ export default function Home() {
           fetchTransactions={fetchTransactions}
           loading={loading}
         />
+      )}
+      
+      {activeTab === 'subscriptions' && (
+        <SubscriptionsView />
       )}
       
       {activeTab === 'upload' && (
