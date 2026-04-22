@@ -237,56 +237,19 @@ router.post('/', upload.fields([{ name: 'transactionFile', maxCount: 1 }, { name
       await client.query('COMMIT');
       await updateJob(importJobId, { progress: 80, log: `Successfully saved ${normalizedRows.length} transactions to database.` });
       
-      let aiJobId = null;
-      if (rowIds.length > 0 && accountSettings?.ai_enabled) {
-        const config = await getSettings('ai_config');
-        if (config?.enabled) {
-          const rules = await getRules();
-          const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
-          const aiService = new AIService(config);
-          const historicalContext = disableAnomalyDetection ? [] : await aiService.getHistoricalContext();
-
-          const transactionsToProcess = normalizedRows.filter(r => rowIds.includes(r.id));
-          
-          const chunkSize = 50;
-          const chunks = [];
-          for (let i = 0; i < transactionsToProcess.length; i += chunkSize) {
-            chunks.push(transactionsToProcess.slice(i, i + chunkSize));
-          }
-
-          aiJobId = await createJob('ai-processing', { transactionIds: rowIds, disableAnomalyDetection });
-
-          await flowProducer.add({
-            name: 'finalize',
-            queueName: 'ai-processing',
-            data: { jobId: aiJobId, totalChunks: chunks.length },
-            opts: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
-            children: chunks.map((chunk, index) => ({
-              name: 'analyze-chunk',
-              queueName: 'ai-processing',
-              data: {
-                transactions: chunk,
-                jobId: aiJobId,
-                chunkNum: index + 1,
-                totalChunks: chunks.length,
-                disableAnomalyDetection,
-                historicalContext,
-                activeRules,
-                config
-              },
-              opts: { attempts: 5, backoff: { type: 'exponential', delay: 2000 } }
-            }))
-          });
-          
-          await updateJob(importJobId, { log: `Triggered AI categorization job #${aiJobId}` });
-        }
+      let nextJobId = null;
+      if (rowIds.length > 0) {
+        nextJobId = await createJob('local-categorization', { transactionIds: rowIds });
+        const { localCategorizationQueue } = await import('../../shared/queue.js');
+        await localCategorizationQueue.add('local-categorization', { jobId: nextJobId, transactionIds: rowIds });
+        await updateJob(importJobId, { log: `Triggered downstream pipeline, started with local-categorization job #${nextJobId}` });
       }
 
       await updateJob(importJobId, { status: 'completed', progress: 100, log: 'CSV import completed successfully.' });
 
       res.json({
         message: `Successfully processed ${normalizedRows.length} records for account ${accountId}`,
-        job_id: aiJobId || importJobId
+        job_id: nextJobId || importJobId
       });
     } catch (err) {
       await client.query('ROLLBACK');

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "build": "node -e \"const cp=require('child_process'),fs=require('fs'),path=require('path');function walk(d){fs.readdirSync(d).forEach(f=>{const p=path.join(d,f);if(fs.statSync(p).isDirectory()){if(f!=='node_modules')walk(p)}else if(f.endsWith('.js'))cp.execSync('node --check '+p,{stdio:'inherit'})})}walk('.')\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -11,8 +11,10 @@
     "dev": "concurrently -k -p \"[{name}]\" -n \"backend,worker,frontend\" -c \"blue,green,magenta\" \"npm run backend:dev\" \"wait-on http://localhost:3000 && npm run worker:dev\" \"wait-on http://localhost:3000 && npm run frontend:dev\"",
     "backend": "npm run start -w backend",
     "backend:dev": "nodemon --env-file=.env backend/index.js",
+    "backend:build": "npm run build -w backend",
     "worker": "npm run start -w worker",
     "worker:dev": "nodemon --env-file=.env worker/index.js",
+    "worker:build": "npm run build -w worker",
     "frontend:dev": "npm run dev -w frontend",
     "frontend:build": "npm run build -w frontend",
     "frontend:start": "npm run start -w frontend -- -H 0.0.0.0"

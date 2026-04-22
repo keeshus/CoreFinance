@@ -259,56 +259,21 @@ export async function runPontoSync(jobId) {
         await updateJob(jobId, { log: `Backward balance reconstruction fallback completed for 90 days.` });
       }
 
-      // 5. Trigger AI Enrichment
+      // 5. Trigger Local Categorization Pipeline
       if (newTransactions.length > 0) {
-        const aiConfig = await getSettings('ai_config');
-        if (aiConfig && aiConfig.enabled) {
-          const aiJobId = await createJob('ai-processing', { transactionIds: newTransactions.map(t => t.id) });
-          await updateJob(jobId, { log: `Triggering separate AI enrichment job: ${aiJobId}` });
-
-          const rules = await getRules();
-          const activeRules = rules.filter(r => r.is_active && !r.is_proposed);
-          const aiService = new AIService(aiConfig);
-          const historicalContext = await aiService.getHistoricalContext();
-
-          const chunkSize = 50;
-          const chunks = [];
-          for (let i = 0; i < newTransactions.length; i += chunkSize) {
-            chunks.push(newTransactions.slice(i, i + chunkSize));
-          }
-
-          await flowProducer.add({
-            name: 'finalize',
-            queueName: 'ai-processing',
-            data: { jobId: aiJobId, totalChunks: chunks.length },
-            opts: { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
-            children: chunks.map((chunk, index) => ({
-              name: 'analyze-chunk',
-              queueName: 'ai-processing',
-              data: {
-                transactions: chunk,
-                jobId: aiJobId,
-                chunkNum: index + 1,
-                totalChunks: chunks.length,
-                historicalContext,
-                activeRules,
-                config: aiConfig
-              },
-              opts: { 
-                attempts: 3, 
-                backoff: { type: 'exponential', delay: 2000 },
-                removeOnComplete: true
-              }
-            }))
-          });
-        }
+        const transactionIds = newTransactions.map(t => t.id);
+        const nextJobId = await createJob('local-categorization', { transactionIds });
+        await updateJob(jobId, { log: `Triggering downstream pipeline, started with local-categorization job: ${nextJobId}` });
+        
+        const { localCategorizationQueue } = await import('../shared/queue.js');
+        await localCategorizationQueue.add('local-categorization', { jobId: nextJobId, transactionIds });
       }
     }
 
-    await updateJob(jobId, { 
-      status: 'completed', 
-      progress: 100, 
-      log: 'Ponto synchronization and balance reconstruction completed successfully.' 
+    await updateJob(jobId, {
+      status: 'completed',
+      progress: 100,
+      log: 'Ponto synchronization and balance reconstruction completed successfully.'
     });
 
   } catch (err) {

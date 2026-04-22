@@ -14,10 +14,9 @@ export class AIService {
     this.logger(`Initialized with model: ${this.modelName}, grounding: ${this.grounding}`);
   }
 
-  async getModel(excludeAnomaly = false) {
+  async getModel(jobType = 'both') {
     const properties = {
       id: { type: SchemaType.STRING },
-      ai_category: { type: SchemaType.STRING },
       rule_violations: {
         type: SchemaType.ARRAY,
         items: {
@@ -46,9 +45,14 @@ export class AIService {
       }
     };
 
-    const required = ['id', 'ai_category'];
+    const required = ['id'];
 
-    if (!excludeAnomaly) {
+    if (jobType === 'categorization' || jobType === 'both') {
+      properties.ai_category = { type: SchemaType.STRING };
+      required.push('ai_category');
+    }
+
+    if (jobType === 'anomaly' || jobType === 'both') {
       properties.is_anomalous = { type: SchemaType.BOOLEAN };
       properties.anomaly_reason = { type: SchemaType.STRING };
       required.push('is_anomalous');
@@ -105,22 +109,30 @@ export class AIService {
 
   async processBatch(transactions, activeRules = [], options = {}) {
     const historicalContext = options.historicalContext || [];
-    const model = await this.getModel(options.disableAnomalyDetection);
+    const jobType = options.jobType || (options.disableAnomalyDetection ? 'categorization' : 'both');
+    const model = await this.getModel(jobType);
     const dbCategories = await getSettings('categories') || [];
     const onTransactionEnriched = options.onTransactionEnriched || (async () => {});
 
     const categoryDescriptions = dbCategories.map(c => `- ${c.name}: ${c.description || ''}`).join('\n');
     const categoryNames = dbCategories.map(c => c.name).join(', ');
 
-    const taskList = options.disableAnomalyDetection
-      ? `1. 'ai_category': The single best matching category from the available categories list.
-      2. 'rule_violations': Array of objects for any active validation rules that were violated.
-      3. 'proposed_rules': Propose new rules (either validation or categorization) based on detected patterns.`
-      : `1. 'ai_category': The single best matching category from the available categories list.
+    let taskList = '';
+    if (jobType === 'categorization') {
+      taskList = `1. 'ai_category': The single best matching category from the available categories list.
+      2. 'proposed_rules': Propose new categorization rules based on detected patterns.`;
+    } else if (jobType === 'anomaly') {
+      taskList = `1. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns.
+      2. 'anomaly_reason': String (optional), explanation of the anomaly.
+      3. 'rule_violations': Array of objects for any active validation rules that were violated.
+      4. 'proposed_rules': Propose new validation rules based on detected patterns.`;
+    } else {
+      taskList = `1. 'ai_category': The single best matching category from the available categories list.
       2. 'is_anomalous': Boolean, true if this transaction deviates significantly from historical patterns.
       3. 'anomaly_reason': String (optional), explanation of the anomaly.
       4. 'rule_violations': Array of objects for any active validation rules that were violated.
       5. 'proposed_rules': Propose new rules (either validation or categorization) based on detected patterns.`;
+    }
 
     const prompt = `
       You are a financial analysis assistant.
@@ -129,10 +141,9 @@ export class AIService {
       Return only the raw JSON.
       Analyze the following batch of recent transactions and return a JSON array.
       
-      ${options.disableAnomalyDetection ? '' : `### Historical Context (Normal Behavior):\n${JSON.stringify(historicalContext)}`}
+      ${jobType !== 'categorization' ? `### Historical Context (Normal Behavior):\n${JSON.stringify(historicalContext)}` : ''}
 
-      ### Available Categories and Definitions:
-      ${categoryDescriptions}
+      ${jobType !== 'anomaly' ? `### Available Categories and Definitions:\n${categoryDescriptions}` : ''}
 
       ### Active Rules to Check (Patterns can be regex or natural language descriptions):
       ${JSON.stringify(activeRules)}
@@ -152,9 +163,9 @@ export class AIService {
       For each transaction, provide:
       ${taskList}
 
-         - 'ai_category' MUST strictly be one of: ${categoryNames}.
-         - Categorization rules tell you which category to assign. If a categorization rule matches a transaction, you MUST assign the category specified in that rule. DO NOT create a rule_violation for a matched categorization rule. A successful match is not a violation.
-         - Validation rules are used to detect anomalies. ONLY validation rules can generate 'rule_violations', and ONLY when the transaction fails to meet the expected criteria of the validation rule.
+         ${jobType !== 'anomaly' ? `- 'ai_category' MUST strictly be one of: ${categoryNames}.
+         - Categorization rules tell you which category to assign. If a categorization rule matches a transaction, you MUST assign the category specified in that rule. DO NOT create a rule_violation for a matched categorization rule. A successful match is not a violation.` : ''}
+         ${jobType !== 'categorization' ? `- Validation rules are used to detect anomalies. ONLY validation rules can generate 'rule_violations', and ONLY when the transaction fails to meet the expected criteria of the validation rule.
          - Each rule_violations object MUST have:
            - 'rule_id': The ID of the violated validation rule.
            - 'reason': A brief, clear explanation of WHY the validation rule was violated (e.g. "Expected counterparty Unive BV but found ABN", "Amount $110 exceeds margin of $5 for expected $100").
@@ -162,11 +173,11 @@ export class AIService {
          
          A validation rule is violated if:
          - The transaction doesnt comply to the given description.
-         - IF it has an 'expected_amount' and 'amount_margin', the transaction amount is NOT within [expected_amount - amount_margin, expected_amount + amount_margin].
+         - IF it has an 'expected_amount' and 'amount_margin', the transaction amount is NOT within [expected_amount - amount_margin, expected_amount + amount_margin].` : ''}
          
          - Each proposed_rules object MUST have:
-           - 'type': 'validation' OR 'categorization'
-           - 'name': Natural language rule name (e.g. Health Insurance), 
+           - 'type': ${jobType === 'categorization' ? "'categorization'" : jobType === 'anomaly' ? "'validation'" : "'validation' OR 'categorization'"}
+           - 'name': Natural language rule name (e.g. Health Insurance),
            - 'description': Natural language description of the rule (e.g. All transactions to AXA for health insurance),
            - IF type='validation': Provide 'expected_amount' and 'amount_margin' (a reasonable margin if the amount varies slightly, or 0 if it's always exact)
            - IF type='categorization': Provide 'category' (MUST be exactly one of: ${categoryNames}).

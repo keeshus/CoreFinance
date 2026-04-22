@@ -14,5 +14,8 @@ connection.on('error', (err) => {
 });
 
 export const aiQueue = new Queue('ai-processing', { connection });
+export const localCategorizationQueue = new Queue('local-categorization', { connection });
+export const aiCategorizationQueue = new Queue('ai-categorization', { connection });
+export const anomalyDetectionQueue = new Queue('anomaly-detection', { connection });
 export const pontoQueue = new Queue('ponto-sync', { connection });
 export const flowProducer = new FlowProducer({ connection });

@@ -945,6 +945,119 @@ export const generateMatchKey = (tx) => {
   return null;
 };
 
+export const localCategorizeTransactions = async (jobId, transactionIds) => {
+  if (!transactionIds || transactionIds.length === 0) return;
+  const client = await pool.connect();
+  try {
+    if (jobId) await updateJob(jobId, { status: 'processing', progress: 0, log: `Starting local categorization for ${transactionIds.length} transactions...` });
+    
+    const txRes = await client.query('SELECT * FROM transactions WHERE id = ANY($1) ORDER BY id ASC', [transactionIds]);
+    const transactions = txRes.rows;
+    
+    const rulesRes = await client.query('SELECT * FROM rules WHERE is_active = true AND type = \'categorization\' AND is_proposed = false');
+    const catRules = rulesRes.rows;
+
+    const majorityMapRes = await client.query(`
+      WITH counts AS (
+        SELECT metadata->>'match_key' as mkey, metadata->>'ai_category' as cat, count(*) as cnt
+        FROM transactions
+        WHERE metadata->>'match_key' IS NOT NULL AND metadata->>'ai_category' IS NOT NULL
+        GROUP BY 1, 2
+      ),
+      ranked AS (
+        SELECT mkey, cat, cnt, ROW_NUMBER() OVER(PARTITION BY mkey ORDER BY cnt DESC) as rnk
+        FROM counts
+      )
+      SELECT mkey, cat FROM ranked WHERE rnk = 1
+    `);
+    const majorityMap = majorityMapRes.rows.reduce((acc, row) => {
+      acc[row.mkey] = row.cat;
+      return acc;
+    }, {});
+    
+    let processed = 0;
+    let updated = 0;
+    let reCategorized = 0;
+    
+    await client.query('BEGIN');
+
+    for (const tx of transactions) {
+      processed++;
+      if (jobId && processed % 100 === 0) {
+        await updateJob(jobId, { progress: Math.floor((processed / transactions.length) * 100) });
+      }
+
+      let newMetadata = tx.metadata || {};
+      let needsUpdate = false;
+      let currentCategory = newMetadata.ai_category;
+
+      const matchKey = generateMatchKey(tx);
+      if (matchKey && newMetadata.match_key !== matchKey) {
+        newMetadata.match_key = matchKey;
+        needsUpdate = true;
+      }
+
+      let matchedRule = null;
+      for (const rule of catRules) {
+        try {
+          const regex = new RegExp(rule.pattern, 'i');
+          if ((tx.counterparty && regex.test(tx.counterparty)) || (tx.name_description && regex.test(tx.name_description))) {
+            matchedRule = rule;
+            break;
+          }
+        } catch(e) {}
+      }
+
+      if (matchedRule) {
+        if (currentCategory !== matchedRule.category || newMetadata.match_type !== 'rule') {
+           if (currentCategory !== matchedRule.category) reCategorized++;
+           newMetadata.ai_category = matchedRule.category;
+           newMetadata.match_type = 'rule';
+           newMetadata.matched_rule_id = matchedRule.id;
+           needsUpdate = true;
+        }
+      } else if (matchKey) {
+        const majorityCat = majorityMap[matchKey];
+        if (majorityCat) {
+           if (!currentCategory || (currentCategory !== majorityCat && !newMetadata.ai_enriched)) {
+              if (currentCategory && currentCategory !== majorityCat) reCategorized++;
+              newMetadata.ai_category = majorityCat;
+              newMetadata.match_type = 'similarity';
+              needsUpdate = true;
+           }
+        }
+      }
+
+      if (needsUpdate) {
+        await client.query(
+          'UPDATE transactions SET metadata = $1 WHERE id = $2',
+          [JSON.stringify(newMetadata), tx.id]
+        );
+        updated++;
+        
+        if (updated % 500 === 0) {
+          await client.query('COMMIT');
+          await client.query('BEGIN');
+        }
+      }
+    }
+    
+    await client.query('COMMIT');
+    
+    const logMsg = `Local categorization complete. Processed ${processed} txs. Updated ${updated}. Re-categorized ${reCategorized}.`;
+    if (jobId) await updateJob(jobId, { status: 'completed', progress: 100, log: logMsg });
+    console.log(logMsg);
+    
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Local categorization failed', err);
+    if (jobId) await updateJob(jobId, { status: 'failed', error: err.message });
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 export const runCategorizationAudit = async (jobId) => {
   const client = await pool.connect();
   try {
