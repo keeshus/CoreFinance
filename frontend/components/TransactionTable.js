@@ -15,12 +15,12 @@ export default function TransactionTable({
 }) {
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '500px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '350px' }}>
         <thead>
           <tr style={{ background: '#f8fafc', fontSize: '0.75em', textTransform: 'uppercase', color: '#64748b', fontWeight: 'bold' }}>
             <th 
               onClick={() => toggleSort('date')}
-              style={{ padding: '15px 20px', cursor: 'pointer', userSelect: 'none', width: '150px' }}
+              style={{ padding: '15px 20px', cursor: 'pointer', userSelect: 'none', width: '80px' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 Date <ArrowUpDown size={12} opacity={sortField === 'date' ? 1 : 0.3} />
@@ -46,8 +46,9 @@ export default function TransactionTable({
               </th>
             )}
             <th 
+              className={deviationsOnly ? 'hide-mobile' : ''}
               onClick={() => toggleSort('amount')}
-              style={{ padding: '15px 20px', textAlign: 'right', cursor: 'pointer', userSelect: 'none', width: '120px' }}
+              style={{ padding: '15px 20px', textAlign: 'right', cursor: 'pointer', userSelect: 'none', width: '100px' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', justifyContent: 'flex-end' }}>
                 Amount <ArrowUpDown size={12} opacity={sortField === 'amount' ? 1 : 0.3} />
@@ -64,7 +65,7 @@ export default function TransactionTable({
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
-              <td style={{ padding: '12px 20px', fontSize: '0.8em', color: '#64748b' }}>
+              <td style={{ padding: '12px 10px 12px 20px', fontSize: '0.8em', color: '#64748b' }}>
                 <div className="show-mobile-only">
                   {new Date(t.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })}
                 </div>
@@ -84,9 +85,9 @@ export default function TransactionTable({
                   </span>
                 )}
               </td>
-              <td style={{ padding: '12px 20px' }}>
+              <td style={{ padding: '12px 10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ 
+                  <div className="hide-mobile" style={{ 
                     padding: '6px', borderRadius: '8px', background: parseFloat(t.amount) < 0 ? '#fef2f2' : '#f0fdf4',
                     color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e',
                     flexShrink: 0
@@ -112,24 +113,27 @@ export default function TransactionTable({
                 {t.counterparty || '-'}
               </td>
               {deviationsOnly && (
-                <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                   <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
                     <button 
                       onClick={(e) => { e.stopPropagation(); onResolve(t.id, 'accepted'); }}
-                      style={{ padding: '4px 8px', borderRadius: '4px', background: t.metadata?.review_status === 'accepted' ? '#22c55e' : '#f0fdf4', color: t.metadata?.review_status === 'accepted' ? '#fff' : '#16a34a', border: 'none', cursor: 'pointer', fontSize: '0.75em', fontWeight: 'bold' }}
+                      style={{ padding: '4px 6px', borderRadius: '4px', background: t.metadata?.review_status === 'accepted' ? '#22c55e' : '#f0fdf4', color: t.metadata?.review_status === 'accepted' ? '#fff' : '#16a34a', border: 'none', cursor: 'pointer', fontSize: '0.7em', fontWeight: 'bold' }}
                     >
                       Accept
                     </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); onResolve(t.id, 'negated'); }}
-                      style={{ padding: '4px 8px', borderRadius: '4px', background: t.metadata?.review_status === 'negated' ? '#ef4444' : '#fef2f2', color: t.metadata?.review_status === 'negated' ? '#fff' : '#dc2626', border: 'none', cursor: 'pointer', fontSize: '0.75em', fontWeight: 'bold' }}
+                      style={{ padding: '4px 6px', borderRadius: '4px', background: t.metadata?.review_status === 'negated' ? '#ef4444' : '#fef2f2', color: t.metadata?.review_status === 'negated' ? '#fff' : '#dc2626', border: 'none', cursor: 'pointer', fontSize: '0.7em', fontWeight: 'bold' }}
                     >
                       Negate
                     </button>
                   </div>
                 </td>
               )}
-              <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85em', color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e' }}>
+              <td 
+                className={deviationsOnly ? 'hide-mobile' : ''}
+                style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.85em', color: parseFloat(t.amount) < 0 ? '#ef4444' : '#22c55e' }}
+              >
                 {formatCurrency(t.amount)}
               </td>
             </tr>
@@ -143,6 +147,21 @@ export default function TransactionTable({
           )}
         </tbody>
       </table>
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .hide-mobile {
+            display: none !important;
+          }
+          .show-mobile-only {
+            display: block !important;
+          }
+        }
+        @media (min-width: 641px) {
+          .show-mobile-only {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
