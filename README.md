@@ -8,17 +8,21 @@
 
 ## ✨ Features
 
-- **📊 Comprehensive Dashboard**: Instantly view transaction summaries, total asset trends, and an interactive transaction history interface.
+- **📊 Comprehensive Dashboard**: Instantly view transaction summaries, total asset trends, and an interactive transaction history interface with advanced filtering and search.
 - **🏦 Automated Synchronization (Ponto API)**: Securely connect to over 1,700 European banks via the Ponto API for automated transaction and balance synchronization.
 - **📂 Verified CSV Import**: Robust parsers for ING Bank (Main, Savings, and Dutch-localized headers). Includes a **Verification Mode** that cross-checks imported transactions against official balance overviews to ensure 100% accuracy.
 - **🧠 AI-Powered Insights (Google AI Studio)**: 
-  - **Batch Enrichment**: Automatically categorize and label transactions in bulk.
-  - **Anomaly Detection**: Flag uncharacteristic transactions based on historical spending behavior.
+  - **Batch Enrichment**: Automatically categorize and label transactions in bulk using Gemini 2.0 Flash.
+  - **Anomaly Detection**: Flag uncharacteristic transactions based on historical spending behavior and user-defined baselines.
   - **Smart Rule Proposals**: Proactively suggest new routing or validation rules based on recurring activity.
-  - **Baseline Mode**: Option to import data without anomaly detection to establish your initial financial history.
+  - **Lookalike Detection**: Find similar historical transactions to ensure consistency in categorization.
 - **🛠️ Custom Rule Engine**: Define deterministic rules to validate transactions, verify counter-parties, or filter payments. Supports **amount-based validation** and **deviation filtering**.
-- **⚙️ Background Processing**: Reliable job execution powered by **BullMQ** and **Valkey** (Redis-compatible) with a dedicated multi-worker registry.
-- **🛡️ Privacy-First & Self-Hosted**: Keep full control of your financial data. The application runs locally via Docker Compose, backed by a private PostgreSQL database.
+- **📅 Subscription Management**: Automatically detect and track recurring subscriptions, including frequency and next billing dates.
+- **🔔 Real-time Notifications**: Web Push notifications for important alerts, sync status, and transaction deviations.
+- **⚙️ Background Processing**: Reliable job execution powered by **BullMQ** and **Valkey** (Redis-compatible) with a dedicated multi-worker registry and real-time progress tracking.
+- **🛡️ Security & Privacy**: 
+  - **JWT Authentication**: Secure login with protected routes.
+  - **Self-Hosted**: Keep full control of your financial data. The application runs locally via Docker Compose, backed by a private PostgreSQL database.
 
 ---
 
@@ -26,11 +30,13 @@
 
 - **Frontend**: [Next.js](https://nextjs.org/) (React), Recharts for data visualization, Lucide React for iconography.
 - **Backend**: [Node.js](https://nodejs.org/) & [Express.js](https://expressjs.com/).
-- **Worker**: Dedicated background worker for AI and Ponto synchronization tasks.
+- **Worker**: Dedicated background worker for AI processing, Ponto synchronization, and subscription detection.
 - **Database**: [PostgreSQL 18](https://www.postgresql.org/) (JSONB for flexible metadata).
 - **Queue/Cache**: [Valkey](https://valkey.io/) (Redis replacement) & [BullMQ](https://bullmq.io/).
 - **Infrastructure**: Docker, Docker Compose, Nginx (Reverse Proxy).
-- **AI SDK**: `@google/generative-ai` (Gemini 1.5 Flash optimized).
+- **AI SDK**: `@google/generative-ai` (Gemini 2.0 Flash optimized).
+- **Security**: JWT (JSON Web Tokens), bcrypt for password hashing.
+- **Notifications**: Web Push API (VAPID).
 
 ---
 
@@ -48,30 +54,36 @@ Ensure you have [Docker](https://docs.docker.com/get-docker/) and [Docker Compos
    cd core-finance
    ```
 
-2. **Start the application stack**:
+2. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set your JWT_SECRET and VAPID keys
+   ```
+
+3. **Start the application stack**:
    ```bash
    docker-compose up -d
    ```
    This initializes the database, backend, worker, frontend, and Nginx proxy.
 
-3. **Access the dashboard**:
-   Navigate to [http://localhost:8080](http://localhost:8080).
+4. **Setup & Access**:
+   Navigate to [http://localhost:8080](http://localhost:8080). On first run, you will be prompted to create an admin account.
 
 ---
 
 ## 🤖 Configuration
 
 ### AI Insights
-The application utilizes Google's **Gemini 1.5 Flash** models via Google AI Studio. 
+The application utilizes Google's **Gemini 2.0 Flash** models via Google AI Studio. 
 1. Obtain an API Key from [Google AI Studio](https://aistudio.google.com/).
-2. Navigate to **Settings** in the dashboard.
-3. Enter your Gemini API Key and toggle desired features (Categorization, Anomaly Detection).
+2. Navigate to **Settings > AI Configuration** in the dashboard.
+3. Enter your Gemini API Key and toggle desired features (Categorization, Anomaly Detection, Grounding).
 
 ### Ponto API (Bank Sync)
 To enable automated bank synchronization:
 1. Register at the [Ponto Developer Portal](https://myponto.com).
 2. Create an integration to get your **Client ID** and **Client Secret**.
-3. Configure these in the **Settings** tab and authorize your bank accounts.
+3. Configure these in **Settings > Ponto Config** and authorize your bank accounts.
 
 ---
 
@@ -100,11 +112,12 @@ If you wish to modify the application or run it in a local development environme
 
 ```text
 core-finance/
-├── backend/        # Express API server (Routes: transactions, rules, ponto, jobs)
+├── backend/        # Express API server (Routes: transactions, rules, ponto, jobs, subscriptions, notifications)
 ├── frontend/       # Next.js React dashboard & components
 ├── worker/         # Background job processor (BullMQ workers)
-├── shared/         # Shared logic (DB utilities, AI services, validation)
-├── nginx/          # Reverse proxy configuration
+├── shared/         # Shared logic (DB utilities, AI services, parser, Ponto client)
+├── nginx/          # Reverse proxy and SSL configuration
+├── scripts/        # Utility scripts (version syncing, etc.)
 ├── docker-compose.yml
 └── package.json    # Monorepo scripts
 ```
