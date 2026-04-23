@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "bullmq": "^5.75.2",
+    "bullmq": "^5.76.1",
     "ioredis": "^5.10.1",
     "pg": "^8.20.0",
     "date-fns": "^4.1.0",
